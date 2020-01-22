@@ -17,6 +17,7 @@
     "gm": "^1.23.1",
     "googleapis": "^27.0.0",
     "image-size": "^0.8.3",
+    "imagemin": "^7.0.1",
     "imagemin-optipng": "^7.1.0",
     "is-url": "^1.2.4",
     "markdown-table": "^1.1.3",
