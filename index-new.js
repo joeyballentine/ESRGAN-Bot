@@ -12,8 +12,12 @@ const fsExtra = require('fs-extra');
 const isImageUrl = require('is-image-url');
 const download = require('image-downloader');
 
+// Imagemagick library
+const gm = require('gm').subClass({ imageMagick: true });
+
 // Python shell
 const { PythonShell } = require('python-shell');
+const shell = require('shelljs');
 
 // The image upscale queue
 // This uses an array instead of a map as it must be the same queue across all servers
@@ -163,15 +167,26 @@ function downloadImage(url) {
         .catch(err => console.error(err));
 }
 
+function checkImage(image) {
+    if (
+        ['png', 'jpg', 'jpeg'].some(
+            filetype =>
+                image.filename.split('.').pop() === filetype.toLowerCase()
+        )
+    ) {
+        return true;
+    } else return false;
+}
+
 function process(job) {
-    if (job.resize) resize(job.resize, job.filter);
+    if (job.resize) resize(job.image, job.resize, job.filter);
 
     //split();
     upscale(job.model);
     //merge();
     optimize();
 
-    if (job.montage) montage();
+    if (job.montage) montage(job.image, job.model, job.message);
 
     return job.message
         .reply(`Upscaled using ${job.model}`, {
@@ -222,16 +237,33 @@ function upscale(model) {
     });
 }
 
-function resize() {}
+function resize(image, amount, filter) {
+    gm(`${esrganPath}/LR/${image.filename}`)
+        .resize((1.0 / amount) * 100.0 + '%')
+        .filter(filter)
+        .write(`${esrganPath}/LR/${image.filename}`, function(err) {
+            if (!err) console.log('done');
+        });
+}
 
-function montage() {}
+function montage(image, model, message) {
+    //TODO extract image % difference for scaling
+    shell.exec(
+        `./scripts/montage.sh -if="${esrganPath}/LR/${image.filename}" -is="${esrganPath}/results/${image.filename}_rlt" -tf="LR" -ts="${model}" -td="2x1" -uf="400%" -ug="100%" -io="output_montage.png"`,
+        () => {
+            return message.channel.send('', {
+                files: [`output_montage.png.png`]
+            });
+        }
+    );
+}
 
 function split() {
-    //TODO
+    shell.exec(`./scripts/split.sh`);
 }
 
 function merge() {
-    //TODO
+    shell.exec(`./scripts/merge.sh`);
 }
 
 function optimize() {
