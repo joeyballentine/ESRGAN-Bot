@@ -78,6 +78,10 @@ client.on('message', async message => {
             return message.channel.send('Not a valid command.');
         }
 
+        // Sanitizing the url
+        url = url.split('&')[0];
+        url = url.split('?')[0];
+
         // Downloads the image
         let image = url.split("/").pop()
         download(url, image);
@@ -103,10 +107,19 @@ client.on('message', async message => {
         // Parsing the extra arguments
 
         // Resize
-        if (['--resize', '-r'].some(arg => args.includes(arg))) {
-            //upscaleJob.resize = args[args.indexOf(arg) + 1];
-            resize(image, args[args.indexOf(arg) + 1])
+        //upscaleJob.resize = args[args.indexOf(arg) + 1];
+        // upscaleJob.resize = ['--resize', '-r'].some(arg => {
+        //     console.log('resize!')
+        //     if (args.includes(arg)) {
+        //         console.log(args[args.indexOf(arg) + 1])
+        //         return args[args.indexOf(arg) + 1]
+        //     };
+        // })
+
+        if (args.includes('--resize')) {
+            upscaleJob.resize = args[args.indexOf('--resize') + 1]
         }
+        console.log(upscaleJob.resize);
 
         // filter
         if (resize && ['--filter', '-f'].some(arg => args.includes(arg))) {
