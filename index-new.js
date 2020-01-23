@@ -13,18 +13,22 @@ const isImageUrl = require('is-image-url');
 const download = require('image-downloader');
 
 // Imagemagick library
-const gm = require('gm').subClass({ imageMagick: true });
+const gm = require('gm').subClass({
+    imageMagick: true
+});
 
 // Python shell
-const { PythonShell } = require('python-shell');
+const {
+    PythonShell
+} = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
 // This uses an array instead of a map as it must be the same queue across all servers
-const queue = new Array();
+const queue = [];
 
 // The prefix used for commands
-const prefix = '--';
+const prefix = '!';
 
 // Change these depending on what you want to allow
 const pixelLimit = 500 * 500;
@@ -40,9 +44,9 @@ client.on('ready', () => {
 });
 
 // Message event handler
-client.on('message', async message => {
+client.on('message', async (message) => {
     // Removes extra spaces between commands
-    message = message.replace(/ +(?= )/g, '');
+    message.content = message.content.replace(/ +(?= )/g, '');
 
     // The bot will not respond unless the prefix is typed
     // It will also ignore anything sent by itself
@@ -76,7 +80,9 @@ client.on('message', async message => {
         }
 
         // Downloads the image and returns an filename & image
-        let image = downloadImage(url);
+        let image = await downloadImage(url);
+        console.log(image);
+        console.log(image.filename);
 
         // Gets the model name from the model argument
         let model = args[0].includes('.pth') ? args[0] : args[0] + '.pth';
@@ -99,17 +105,17 @@ client.on('message', async message => {
         // Parsing the extra arguments
 
         // Resize
-        if (['--resize', '-r'].some(arg => args.includes(arg))) {
+        if (['--resize', '-r'].some((arg) => args.includes(arg))) {
             upscaleJob.resize = args[args.indexOf(arg) + 1];
         }
 
         // filter
-        if (resize && ['--filter', '-f'].some(arg => args.includes(arg))) {
+        if (resize && ['--filter', '-f'].some((arg) => args.includes(arg))) {
             upscaleJob.filter = args[args.indexOf(arg) + 1];
         }
 
         // Montage
-        if (['--montage', '-m'].some(arg => args.includes(arg))) {
+        if (['--montage', '-m'].some((arg) => args.includes(arg))) {
             upscaleJob.montage = args[args.indexOf(arg) + 1];
         }
 
@@ -143,20 +149,25 @@ client.on('message', async message => {
     }
 });
 
+client.login('NjYzMTA3NTQ3OTg4NzU0NDUy.XhDtGg.CGxZaTJRr7OmYJOVbBlY2j9bspc');
+
 function emptyDirs() {
     fsExtra.emptyDirSync(esrganPath + '/results/');
     fsExtra.emptyDirSync(esrganPath + '/LR/');
 }
 
-function downloadImage(url) {
+async function downloadImage(url) {
     const options = {
         url: url,
         dest: esrganPath + './LR'
     };
 
-    download
+    let image = await download
         .image(options)
-        .then(({ filename, image }) => {
+        .then(({
+            filename,
+            image
+        }) => {
             console.log('Saved to', filename);
             console.log(image);
             return {
@@ -164,14 +175,16 @@ function downloadImage(url) {
                 image
             };
         })
-        .catch(err => console.error(err));
+        .catch((err) => console.error(err));
+
+    return image;
 }
 
 function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
-            filetype =>
-                image.filename.split('.').pop() === filetype.toLowerCase()
+            (filetype) =>
+            image.filename.split('.').pop() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -241,7 +254,7 @@ function resize(image, amount, filter) {
     gm(`${esrganPath}/LR/${image.filename}`)
         .resize((1.0 / amount) * 100.0 + '%')
         .filter(filter)
-        .write(`${esrganPath}/LR/${image.filename}`, function(err) {
+        .write(`${esrganPath}/LR/${image.filename}`, function (err) {
             if (!err) console.log('done');
         });
 }
@@ -273,8 +286,7 @@ function optimize() {
     (async () => {
         await imagemin(
             [`${esrganPath}/results/*.png`],
-            `${esrganPath}/results/`,
-            {
+            `${esrganPath}/results/`, {
                 use: [imageminOptipng()]
             }
         );
