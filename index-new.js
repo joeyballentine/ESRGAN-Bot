@@ -18,7 +18,9 @@ const gm = require('gm').subClass({
 });
 
 // Python shell
-const { PythonShell } = require('python-shell');
+const {
+    PythonShell
+} = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
@@ -77,7 +79,7 @@ client.on('message', async message => {
         }
 
         // Downloads the image
-        let image = url.split('\\').pop();
+        let image = url.split("/").pop()
         download(url, image);
 
         // Gets the model name from the model argument
@@ -102,7 +104,8 @@ client.on('message', async message => {
 
         // Resize
         if (['--resize', '-r'].some(arg => args.includes(arg))) {
-            upscaleJob.resize = args[args.indexOf(arg) + 1];
+            //upscaleJob.resize = args[args.indexOf(arg) + 1];
+            resize(image, args[args.indexOf(arg) + 1])
         }
 
         // filter
@@ -118,17 +121,22 @@ client.on('message', async message => {
         // Checks if the image is valid to be upscaled
         if (checkImage(image)) {
             // Adds to the queue and starts upscaling if not already started.
-            if (queue.length === 0) {
-                queue.push(upscaleJob);
+            if (!queue.get(0)) {
+                const queueConstruct = {
+                    textChannel: message.channel,
+                    jobs: []
+                };
+                queue.set(0, queueConstruct);
+                queue.get(0).jobs.push(upscaleJob);
 
                 try {
                     message.channel.send(`Your image is being processed.`);
-                    process(queue[0]);
+                    process(queue.get(0).jobs[0]);
                 } catch (err) {
                     // If something goes wrong here we just reset the entire queue
                     // This probably isn't ideal but it's what the music bots do
                     console.log(err);
-                    queue = [];
+                    queue.delete(0);
                     return message.channel.send(err);
                 }
             } else {
@@ -179,7 +187,7 @@ function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
             filetype =>
-                image.filename.split('.').pop() === filetype.toLowerCase()
+            image.split('.').pop() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -190,29 +198,31 @@ function process(job) {
     if (job.resize) resize(job.image, job.resize, job.filter);
 
     //split();
-    upscale(job.model);
-    //merge();
-    optimize();
+    upscale(job.image, job.model, job, (job) => {
+        //merge();
+        optimize();
 
-    if (job.montage) montage(job.image, job.model, job.message);
+        if (job.montage) montage(job.image, job.model, job.message);
 
-    return job.message
-        .reply(`Upscaled using ${job.model}`, {
-            files: [`${esrganPath}/results/${name}_rlt.png`]
-        })
-        .then(() => {
-            queue.shift();
-            try {
-                process(queue[0]);
-            } catch (err) {
-                console.log(err);
-                queue = [];
-                return job.message.channel.send(err);
-            }
-        });
+        return job.message
+            .reply(`Upscaled using ${job.model}`, {
+                files: [`${esrganPath}/results/${job.image.split('.')[0]}_rlt.png`]
+            })
+            .then(() => {
+                queue.get(0).jobs.shift();
+                try {
+                    process(queue.get(0).jobs[0]);
+                } catch (err) {
+                    console.log(err);
+                    queue = [];
+                    return job.message.channel.send(err);
+                }
+            });
+    });
+
 }
 
-function upscale(model) {
+function upscale(image, model, job, callback) {
     let args = {
         args: [
             `${esrganPath}/models/${model}`,
@@ -229,13 +239,15 @@ function upscale(model) {
             );
         }
 
-        let filePath = `${esrganPath}/results/${name}_rlt.png`;
+        let filePath = `${esrganPath}/results/${image.split('.')[0]}_rlt.png`;
 
         try {
             if (!fs.existsSync(filePath)) {
                 return message.channel.send(
                     'Sorry, there was an error processing your image.'
                 );
+            } else {
+                callback(job);
             }
         } catch (err) {
             return message.channel.send(
@@ -249,7 +261,7 @@ function resize(image, amount, filter) {
     gm(`${esrganPath}/LR/${image.filename}`)
         .resize((1.0 / amount) * 100.0 + '%')
         .filter(filter)
-        .write(`${esrganPath}/LR/${image.filename}`, function(err) {
+        .write(`${esrganPath}/LR/${image.filename}`, function (err) {
             if (!err) console.log('done');
         });
 }
@@ -281,8 +293,7 @@ function optimize() {
     (async () => {
         await imagemin(
             [`${esrganPath}/results/*.png`],
-            `${esrganPath}/results/`,
-            {
+            `${esrganPath}/results/`, {
                 use: [imageminOptipng()]
             }
         );
