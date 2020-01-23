@@ -153,7 +153,7 @@ client.on('message', async message => {
                     return message.channel.send(err);
                 }
             } else {
-                queue.push(upscaleJob);
+                queue.get(0).jobs.push(upscaleJob);
                 return message.channel.send(
                     `${image} has been added to the queue! Your image is #${queue.length} in line for processing.`
                 );
@@ -224,10 +224,14 @@ function process(job) {
             .then(() => {
                 queue.get(0).jobs.shift();
                 try {
-                    process(queue.get(0).jobs[0]);
+                    if (queue.get(0).jobs.length > 0) {
+                        process(queue.get(0).jobs[0]);
+                    } else {
+                        queue.delete(0);
+                    }
                 } catch (err) {
                     console.log(err);
-                    queue = [];
+                    queue.delete(0);
                     return job.message.channel.send(err);
                 }
             });
@@ -271,10 +275,11 @@ function upscale(image, model, job, callback) {
 }
 
 function resize(image, amount, filter) {
-    gm(`${esrganPath}/LR/${image.filename}`)
+    gm(`${esrganPath}/LR/${image}`)
         .resize((1.0 / amount) * 100.0 + '%')
         .filter(filter)
-        .write(`${esrganPath}/LR/${image.filename}`, function (err) {
+        .write(`${esrganPath}/LR/${image}`, function (err) {
+            if (err) console.log(err);
             if (!err) console.log('done');
         });
 }
