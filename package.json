@@ -28,6 +28,7 @@
     "python-shell": "^1.0.8",
     "request": "^2.88.0",
     "shelljs": "^0.8.3",
+    "shelljs.exec": "^1.1.8",
     "valid-url": "^1.0.9"
   }
 }

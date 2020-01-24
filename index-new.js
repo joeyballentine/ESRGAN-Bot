@@ -18,10 +18,9 @@ const gm = require('gm').subClass({
 });
 
 // Python shell
-const {
-    PythonShell
-} = require('python-shell');
+const { PythonShell } = require('python-shell');
 const shell = require('shelljs');
+const exec = require('shelljs.exec');
 
 // The image upscale queue
 const queue = new Map();
@@ -43,7 +42,7 @@ client.on('ready', () => {
 });
 
 // Message event handler
-client.on('message', async message => {
+client.on('message', async (message) => {
     // Removes extra spaces between commands
     message.content = message.content.replace(/ +(?= )/g, '');
 
@@ -83,8 +82,8 @@ client.on('message', async message => {
         url = url.split('?')[0];
 
         // Downloads the image
-        let image = url.split("/").pop()
-        download(url, image);
+        let image = url.split('/').pop();
+        await download(url, image);
 
         // Gets the model name from the model argument
         let model = args[0].includes('.pth') ? args[0] : args[0] + '.pth';
@@ -117,17 +116,19 @@ client.on('message', async message => {
         // })
 
         if (args.includes('--resize')) {
-            upscaleJob.resize = args[args.indexOf('--resize') + 1]
+            upscaleJob.resize = args[args.indexOf('--resize') + 1];
         }
-        console.log(upscaleJob.resize);
+        //console.log(upscaleJob.resize);
 
         // filter
-        if (resize && ['--filter', '-f'].some(arg => args.includes(arg))) {
+        if (resize && ['--filter', '-f'].some((arg) => args.includes(arg))) {
             upscaleJob.filter = args[args.indexOf(arg) + 1];
+        } else {
+            upscaleJob.filter = 'box';
         }
 
         // Montage
-        if (['--montage', '-m'].some(arg => args.includes(arg))) {
+        if (['--montage', '-m'].some((arg) => args.includes(arg))) {
             upscaleJob.montage = args[args.indexOf(arg) + 1];
         }
 
@@ -189,18 +190,26 @@ function emptyDirs() {
 //     return image;
 // }
 
-function download(url, filename) {
-    request
-        .get(url)
-        .on('error', console.error)
-        .pipe(fs.createWriteStream(esrganPath + '/LR/' + filename));
+function download(url, image) {
+    return new Promise((resolve, reject) => {
+        request
+            .get(url)
+            .on('error', console.error)
+            .pipe(fs.createWriteStream(esrganPath + '/LR/' + image))
+            .on('finish', () => {
+                console.log(`The file is finished downloading.`);
+                resolve();
+            })
+            .on('error', (error) => {
+                reject(error);
+            });
+    });
 }
 
 function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
-            filetype =>
-            image.split('.').pop() === filetype.toLowerCase()
+            (filetype) => image.split('.').pop() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -209,7 +218,6 @@ function checkImage(image) {
 
 function process(job) {
     if (job.resize) resize(job.image, job.resize, job.filter);
-
     //split();
     upscale(job.image, job.model, job, (job) => {
         //merge();
@@ -219,7 +227,9 @@ function process(job) {
 
         return job.message
             .reply(`Upscaled using ${job.model}`, {
-                files: [`${esrganPath}/results/${job.image.split('.')[0]}_rlt.png`]
+                files: [
+                    `${esrganPath}/results/${job.image.split('.')[0]}_rlt.png`
+                ]
             })
             .then(() => {
                 queue.get(0).jobs.shift();
@@ -236,7 +246,6 @@ function process(job) {
                 }
             });
     });
-
 }
 
 function upscale(image, model, job, callback) {
@@ -250,7 +259,7 @@ function upscale(image, model, job, callback) {
     PythonShell.run(esrganPath + '/test.py', args, (err, results) => {
         if (err) {
             console.log(err);
-            queue = [];
+            queue.delete(0);
             return message.channel.send(
                 'Sorry, there was an error processing your image.'
             );
@@ -275,13 +284,20 @@ function upscale(image, model, job, callback) {
 }
 
 function resize(image, amount, filter) {
-    gm(`${esrganPath}/LR/${image}`)
-        .resize((1.0 / amount) * 100.0 + '%')
-        .filter(filter)
-        .write(`${esrganPath}/LR/${image}`, function (err) {
-            if (err) console.log(err);
-            if (!err) console.log('done');
-        });
+    // gm(`${esrganPath}/LR/${image}`)
+    //     .resize((1.0 / amount) * 100.0 + '%')
+    //     .filter(filter)
+    //     .write(`${esrganPath}/LR/${image}`, function (err) {
+    //         if (err) console.log(err);
+    //         if (!err) console.log('done');
+    //     });
+    exec(
+        `magick mogrify ${esrganPath}LR/*.* -resize ${(1.0 / amount) * 100.0 +
+            '%'} -filter ${filter}`,
+        () => {
+            console.log('executed');
+        }
+    );
 }
 
 function montage(image, model, message) {
@@ -311,7 +327,8 @@ function optimize() {
     (async () => {
         await imagemin(
             [`${esrganPath}/results/*.png`],
-            `${esrganPath}/results/`, {
+            `${esrganPath}/results/`,
+            {
                 use: [imageminOptipng()]
             }
         );
