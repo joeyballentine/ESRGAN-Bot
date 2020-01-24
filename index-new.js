@@ -216,8 +216,8 @@ function checkImage(image) {
     } else return false;
 }
 
-function process(job) {
-    if (job.resize) resize(job.image, job.resize, job.filter);
+async function process(job) {
+    if (job.resize) await resize(job.image, job.resize, job.filter);
     //split();
     upscale(job.image, job.model, job, (job) => {
         //merge();
@@ -284,20 +284,19 @@ function upscale(image, model, job, callback) {
 }
 
 function resize(image, amount, filter) {
-    // gm(`${esrganPath}/LR/${image}`)
-    //     .resize((1.0 / amount) * 100.0 + '%')
-    //     .filter(filter)
-    //     .write(`${esrganPath}/LR/${image}`, function (err) {
-    //         if (err) console.log(err);
-    //         if (!err) console.log('done');
-    //     });
-    exec(
-        `magick mogrify ${esrganPath}LR/*.* -resize ${(1.0 / amount) * 100.0 +
-            '%'} -filter ${filter}`,
-        () => {
-            console.log('executed');
-        }
-    );
+    return new Promise((resolve, reject) => {
+        shell.exec(
+            `magick mogrify ${esrganPath}LR/*.* -resize ${(1.0 / amount) *
+                100.0 +
+                '%'} -filter ${filter}`,
+            (error, stdout, stderr) => {
+                if (error) {
+                    console.warn(error);
+                }
+                resolve(stdout ? stdout : stderr);
+            }
+        );
+    });
 }
 
 function montage(image, model, message) {
