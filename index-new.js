@@ -12,11 +12,6 @@ const fsExtra = require('fs-extra');
 const isImageUrl = require('is-image-url');
 // const download = require('image-downloader');
 
-// Imagemagick library
-const gm = require('gm').subClass({
-    imageMagick: true
-});
-
 // Python shell
 const { PythonShell } = require('python-shell');
 const shell = require('shelljs');
@@ -97,7 +92,7 @@ client.on('message', async message => {
         let upscaleJob = {
             model: model,
             image: image,
-            resize: false,
+            downscale: false,
             filter: 'box',
             montage: false,
             message: message
@@ -105,28 +100,28 @@ client.on('message', async message => {
 
         // Parsing the extra arguments
 
-        // Resize
-        //upscaleJob.resize = args[args.indexOf(arg) + 1];
-        // upscaleJob.resize = ['--resize', '-r'].some(arg => {
-        //     console.log('resize!')
+        // downscale
+        //upscaleJob.downscale = args[args.indexOf(arg) + 1];
+        // upscaleJob.downscale = ['--downscale', '-r'].some(arg => {
+        //     console.log('downscale!')
         //     if (args.includes(arg)) {
         //         console.log(args[args.indexOf(arg) + 1])
         //         return args[args.indexOf(arg) + 1]
         //     };
         // })
 
-        if (args.includes('--resize')) {
-            upscaleJob.resize = args[args.indexOf('--resize') + 1];
+        if (args.includes('-downscale')) {
+            upscaleJob.downscale = args[args.indexOf('-downscale') + 1];
         }
-        //console.log(upscaleJob.resize);
+        //console.log(upscaleJob.downscale);
 
         // filter
-        if (resize && ['--filter', '-f'].some(arg => args.includes(arg))) {
-            upscaleJob.filter = args[args.indexOf(arg) + 1];
+        if (args.includes('-filter')) {
+            upscaleJob.filter = args[args.indexOf('-filter') + 1];
         }
 
         // Montage
-        if (args.includes('--montage')) {
+        if (args.includes('-montage')) {
             upscaleJob.montage = true;
         }
 
@@ -199,7 +194,7 @@ function checkImage(image) {
 }
 
 async function process(job) {
-    if (job.resize) await resize(job.image, job.resize, job.filter);
+    if (job.downscale) await downscale(job.image, job.downscale, job.filter);
     //split();
     await upscale(job.image, job.model);
     //merge();
@@ -266,7 +261,7 @@ function upscale(image, model) {
     });
 }
 
-function resize(image, amount, filter) {
+function downscale(image, amount, filter) {
     return new Promise((resolve, reject) => {
         shell.exec(
             `magick mogrify -resize ${(1.0 / amount) * 100.0 +
