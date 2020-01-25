@@ -20,7 +20,6 @@ const gm = require('gm').subClass({
 // Python shell
 const { PythonShell } = require('python-shell');
 const shell = require('shelljs');
-const exec = require('shelljs.exec');
 
 // The image upscale queue
 const queue = new Map();
@@ -42,8 +41,9 @@ client.on('ready', () => {
 });
 
 // Message event handler
-client.on('message', async (message) => {
+client.on('message', async message => {
     // Removes extra spaces between commands
+    // this doesnt work
     message.content = message.content.replace(/ +(?= )/g, '');
 
     // The bot will not respond unless the prefix is typed
@@ -98,7 +98,7 @@ client.on('message', async (message) => {
             model: model,
             image: image,
             resize: false,
-            filter: false,
+            filter: 'box',
             montage: false,
             message: message
         };
@@ -121,15 +121,13 @@ client.on('message', async (message) => {
         //console.log(upscaleJob.resize);
 
         // filter
-        if (resize && ['--filter', '-f'].some((arg) => args.includes(arg))) {
+        if (resize && ['--filter', '-f'].some(arg => args.includes(arg))) {
             upscaleJob.filter = args[args.indexOf(arg) + 1];
-        } else {
-            upscaleJob.filter = 'box';
         }
 
         // Montage
-        if (['--montage', '-m'].some((arg) => args.includes(arg))) {
-            upscaleJob.montage = args[args.indexOf(arg) + 1];
+        if (args.includes('--montage')) {
+            upscaleJob.montage = true;
         }
 
         // Checks if the image is valid to be upscaled
@@ -174,22 +172,6 @@ function emptyDirs() {
     fsExtra.emptyDirSync(esrganPath + '/LR/');
 }
 
-// async function downloadImage(url) {
-//     const options = {
-//         url: url,
-//         dest: esrganPath + './LR'
-//     };
-
-//     let image = await download
-//         .image(options)
-//         .then(({ filename, image }) => {
-//             return filename.split(`\\`).pop();
-//         })
-//         .catch(err => console.error(err));
-
-//     return image;
-// }
-
 function download(url, image) {
     return new Promise((resolve, reject) => {
         request
@@ -200,7 +182,7 @@ function download(url, image) {
                 console.log(`The file is finished downloading.`);
                 resolve();
             })
-            .on('error', (error) => {
+            .on('error', error => {
                 reject(error);
             });
     });
@@ -209,7 +191,7 @@ function download(url, image) {
 function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
-            (filetype) => image.split('.').pop() === filetype.toLowerCase()
+            filetype => image.split('.').pop() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -219,76 +201,76 @@ function checkImage(image) {
 async function process(job) {
     if (job.resize) await resize(job.image, job.resize, job.filter);
     //split();
-    upscale(job.image, job.model, job, (job) => {
-        //merge();
-        optimize();
+    await upscale(job.image, job.model);
+    //merge();
+    optimize();
 
-        if (job.montage) montage(job.image, job.model, job.message);
+    //if (job.montage) await montage(job.image, job.model, job.message);
 
-        return job.message
-            .reply(`Upscaled using ${job.model}`, {
-                files: [
-                    `${esrganPath}/results/${job.image.split('.')[0]}_rlt.png`
-                ]
-            })
-            .then(() => {
-                queue.get(0).jobs.shift();
-                try {
-                    if (queue.get(0).jobs.length > 0) {
-                        process(queue.get(0).jobs[0]);
-                    } else {
-                        queue.delete(0);
-                    }
-                } catch (err) {
-                    console.log(err);
+    return job.message
+        .reply(`Upscaled using ${job.model}`, {
+            files: [`${esrganPath}/results/${job.image.split('.')[0]}_rlt.png`]
+        })
+        .then(() => {
+            queue.get(0).jobs.shift();
+            try {
+                if (queue.get(0).jobs.length > 0) {
+                    process(queue.get(0).jobs[0]);
+                } else {
                     queue.delete(0);
-                    return job.message.channel.send(err);
                 }
-            });
-    });
+            } catch (err) {
+                console.log(err);
+                queue.delete(0);
+                return job.message.channel.send(err);
+            }
+        });
 }
 
-function upscale(image, model, job, callback) {
-    let args = {
-        args: [
-            `${esrganPath}/models/${model}`,
-            `--input=${esrganPath}/LR/`,
-            `--output=${esrganPath}/results/`
-        ]
-    };
-    PythonShell.run(esrganPath + '/test.py', args, (err, results) => {
-        if (err) {
-            console.log(err);
-            queue.delete(0);
-            return message.channel.send(
-                'Sorry, there was an error processing your image.'
-            );
-        }
-
-        let filePath = `${esrganPath}/results/${image.split('.')[0]}_rlt.png`;
-
-        try {
-            if (!fs.existsSync(filePath)) {
+function upscale(image, model) {
+    return new Promise((resolve, reject) => {
+        let args = {
+            args: [
+                `${esrganPath}/models/${model}`,
+                `--input=${esrganPath}/LR/`,
+                `--output=${esrganPath}/results/`
+            ]
+        };
+        PythonShell.run(esrganPath + '/test.py', args, (err, results) => {
+            if (err) {
+                console.log(err);
+                queue.delete(0);
                 return message.channel.send(
                     'Sorry, there was an error processing your image.'
                 );
-            } else {
-                callback(job);
             }
-        } catch (err) {
-            return message.channel.send(
-                'Sorry, there was an error processing your image.'
-            );
-        }
+
+            let filePath = `${esrganPath}/results/${
+                image.split('.')[0]
+            }_rlt.png`;
+
+            try {
+                if (!fs.existsSync(filePath)) {
+                    return message.channel.send(
+                        'Sorry, there was an error processing your image.'
+                    );
+                } else {
+                    resolve();
+                }
+            } catch (err) {
+                return message.channel.send(
+                    'Sorry, there was an error processing your image.'
+                );
+            }
+        });
     });
 }
 
 function resize(image, amount, filter) {
     return new Promise((resolve, reject) => {
         shell.exec(
-            `magick mogrify ${esrganPath}LR/*.* -resize ${(1.0 / amount) *
-                100.0 +
-                '%'} -filter ${filter}`,
+            `magick mogrify -resize ${(1.0 / amount) * 100.0 +
+                '%'} -filter ${filter} ${esrganPath}LR/*.*`,
             (error, stdout, stderr) => {
                 if (error) {
                     console.warn(error);
@@ -301,14 +283,22 @@ function resize(image, amount, filter) {
 
 function montage(image, model, message) {
     //TODO extract image % difference for scaling
-    shell.exec(
-        `./scripts/montage.sh -if="${esrganPath}/LR/${image.filename}" -is="${esrganPath}/results/${image.filename}_rlt" -tf="LR" -ts="${model}" -td="2x1" -uf="400%" -ug="100%" -io="output_montage.png"`,
-        () => {
-            return message.channel.send('', {
-                files: [`output_montage.png.png`]
-            });
-        }
-    );
+    return new Promise((resolve, reject) => {
+        shell.exec(
+            `./scripts/montage.sh -if="${esrganPath}/LR/${image}" -is="${esrganPath}/results/${
+                image.split('.')[0]
+            }_rlt.png" -tf="LR" -ts="${model}" -td="2x1" -uf="400%" -ug="100%" -io="${esrganPath}/results/output_montage.png"`,
+            (error, stdout, stderr) => {
+                if (error) {
+                    console.warn(error);
+                }
+                message.channel.send('', {
+                    files: [`${esrganPath}/results/output_montage.png`]
+                });
+                resolve(stdout ? stdout : stderr);
+            }
+        );
+    });
 }
 
 function split() {
