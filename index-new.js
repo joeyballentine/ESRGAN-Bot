@@ -200,7 +200,7 @@ async function process(job) {
     //merge();
     optimize();
 
-    //if (job.montage) await montage(job.image, job.model, job.message);
+    if (job.montage) await montage(job.image, job.model, job.message);
 
     return job.message
         .reply(`Upscaled using ${job.model}`, {
@@ -278,18 +278,28 @@ function downscale(image, amount, filter) {
 
 function montage(image, model, message) {
     //TODO extract image % difference for scaling
+    let lr = `${esrganPath}LR/${image}`;
+    let result = `${esrganPath}results/${image.split('.')[0]}_rlt.png`;
+    let modelName = model.replace('.pth', '');
+
+    let path = require('path');
+    let absolutePath = path.resolve('./scripts/montage.sh');
+
     return new Promise((resolve, reject) => {
+        shell.rm('-rf', '/montages/');
         shell.exec(
-            `./scripts/montage.sh -if="${esrganPath}/LR/${image}" -is="${esrganPath}/results/${
-                image.split('.')[0]
-            }_rlt.png" -tf="LR" -ts="${model}" -td="2x1" -uf="400%" -ug="100%" -io="${esrganPath}/results/output_montage.png"`,
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="output_montage.png"`,
             (error, stdout, stderr) => {
                 if (error) {
                     console.warn(error);
+                    message.channel.send(
+                        'There was an error making your montage.'
+                    );
+                } else {
+                    message.channel.send('', {
+                        files: [`./montages/output_montage.png`]
+                    });
                 }
-                message.channel.send('', {
-                    files: [`${esrganPath}/results/output_montage.png`]
-                });
                 resolve(stdout ? stdout : stderr);
             }
         );

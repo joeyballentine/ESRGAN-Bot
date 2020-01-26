@@ -6,8 +6,24 @@ shopt -s extglob
 resizeLR() {
     FILENAME=$(basename -- "$file")
     FL="${FILENAME%.*}"
-    ${MAGICK_COMMAND} convert ${IMAGE_FIRST} -filter point -resize ${UPSCALE_FACTOR_FIRST_IMAGE} ${TMP_FOLDER}/${IMAGE_FIRST}
-    ${MAGICK_COMMAND} convert ${IMAGE_SECOND} ${TMP_FOLDER}/${IMAGE_SECOND}
+        firstRes1="`magick identify -format '%w' ${IMAGE_FIRST}`"
+        secondRes1="`magick identify -format '%w' ${IMAGE_SECOND}`"
+        oneEX=$((firstRes1*1))
+        fourEX=$((firstRes1*4))
+        eightEX=$((firstRes1*8))
+        if [[ $secondRes1 = $oneEX ]]; then
+            autoScale2="100%"
+        elif [[ $secondRes1 = $fourEX ]]; then
+            autoScale2="400%"
+        elif [[ $secondRes1 = $eightEX ]]; then
+            autoScale2="800%"
+        else
+            autoScale2="400%"
+        fi
+    firstFixed=$(basename ${IMAGE_FIRST})
+    secondFixed=$(basename ${IMAGE_SECOND})
+    ${MAGICK_COMMAND} convert ${IMAGE_FIRST} -filter point -resize ${autoScale2} ${TMP_FOLDER}/${firstFixed}
+    ${MAGICK_COMMAND} convert ${IMAGE_SECOND} -filter point -resize ${UPSCALE_FACTOR_SECOND_IMAGE} ${TMP_FOLDER}/${secondFixed}
 }
 
 # Creates circle gradient with same dimensions as final montage
@@ -17,7 +33,7 @@ resizeLR() {
 # Adds 64px border to bottom of final montage
 # Composites Montage over Background, then composites Text over Montage
 mont() {
-    ${MAGICK_COMMAND} montage -background black ${TMP_FOLDER}/${IMAGE_FIRST} ${TMP_FOLDER}/${IMAGE_SECOND} -tile ${TILE_DIM} -geometry +0+0 -depth 8 -define png:color-type=2 -depth 8 ${TMP_FOLDER}/montage.png
+    ${MAGICK_COMMAND} montage -background black ${TMP_FOLDER}/${firstFixed} ${TMP_FOLDER}/${secondFixed} -tile ${TILE_DIM} -geometry +0+0 -depth 8 -define png:color-type=2 -depth 8 ${TMP_FOLDER}/montage.png
     ${MAGICK_COMMAND} mogrify -filter point -resize ${UPSCALE_FACTOR_GLOBAL} -bordercolor None -border 0x64 -gravity North -chop 0x64 -depth 8 ${TMP_FOLDER}/montage.png
     RES1="`${MAGICK_COMMAND} identify -format '%wx%h' ${TMP_FOLDER}/montage.png`"
     RES2="`${MAGICK_COMMAND} identify -format '%w' ${TMP_FOLDER}/montage.png`"
@@ -39,6 +55,19 @@ mont() {
     ${MAGICK_COMMAND} convert ${TMP_FOLDER}/Montage_BG_temp1.png ${TMP_FOLDER}/Montage_BG.png -composite -depth 8 ${OUT_FOLDER}/${IMAGE_OUTPUT}
 }
 
+# firstRes1="`magick identify -format '%w' ${IMAGE_FIRST}`"
+# secondRes1="`magick identify -format '%w' ${IMAGE_SECOND}`"
+# oneEX=$((firstRes1*1))
+# fourEX=$((firstRes1*4))
+# eightEX=$((firstRes1*8))
+# if [[ $secondRes1 = $oneEX ]]; then
+    # autoScale2="100%"
+# elif [[ $secondRes1 = $fourEX ]]; then
+    # autoScale2="400%"
+# elif [[ $secondRes1 = $eightEX ]]; then
+    # autoScale2="800%"
+# fi
+
 # Initialize Variables
 COLOR_FIRST="rgb(125, 65, 130)"
 COLOR_SECOND="rgb(255, 209, 65)"
@@ -48,11 +77,12 @@ IMAGE_OUTPUT="comparisonOutput.png"
 TEXT_FIRST="LR"
 TEXT_SECOND="HR"
 TILE_DIM="2x1"
-FONT="Rubik-Bold"
+FONT="Arial-Black"
 TMP_FOLDER=".temp1"
 MAGICK_COMMAND="magick"
 UPSCALE_FACTOR_FIRST_IMAGE="100%"
-UPSCALE_FACTOR_GLOBAL="400%"
+UPSCALE_FACTOR_SECOND_IMAGE="100%"
+UPSCALE_FACTOR_GLOBAL="100%"
 OUT_FOLDER="montages"
 
 # argphase, fill variables with values from the user if specified  
@@ -105,6 +135,10 @@ for OPTION in "$@"; do
         ;;
         -uf=*|--rez-1=*)
             UPSCALE_FACTOR_FIRST_IMAGE="${OPTION#*=}"
+            shift
+        ;;
+        -us=*|--rez-2=*)
+            UPSCALE_FACTOR_SECOND_IMAGE="${OPTION#*=}"
             shift
         ;;
         -ug=*|--Lres_1=*)
