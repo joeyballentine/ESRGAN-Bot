@@ -299,6 +299,7 @@ function montage(image, model, message) {
                     message.channel.send('', {
                         files: [`./montages/output_montage.png`]
                     });
+                    shell.rm('-rf', '/montages/');
                 }
                 resolve(stdout ? stdout : stderr);
             }
