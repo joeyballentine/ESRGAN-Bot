@@ -200,7 +200,7 @@ async function process(job) {
     //merge();
     optimize();
 
-    if (job.montage) await montage(job.image, job.model, job.message);
+    if (job.montage) montage(job.image, job.model, job.message);
 
     return job.message
         .reply(`Upscaled using ${job.model}`, {
@@ -279,16 +279,18 @@ function downscale(image, amount, filter) {
 function montage(image, model, message) {
     //TODO extract image % difference for scaling
     let lr = `${esrganPath}LR/${image}`;
-    let result = `${esrganPath}results/${image.split('.')[0]}_rlt.png`;
+    let imageName = image.split('.')[0];
+    let result = `${esrganPath}results/${imageName}_rlt.png`;
     let modelName = model.replace('.pth', '');
 
     let path = require('path');
     let absolutePath = path.resolve('./scripts/montage.sh');
 
     return new Promise((resolve, reject) => {
-        shell.rm('-rf', '/montages/');
+        //shell.rm('-rf', '/montages/');
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="output_montage.png"`,
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png"`,
+            { silent: true },
             (error, stdout, stderr) => {
                 if (error) {
                     console.warn(error);
@@ -296,10 +298,32 @@ function montage(image, model, message) {
                         'There was an error making your montage.'
                     );
                 } else {
-                    message.channel.send('', {
-                        files: [`./montages/output_montage.png`]
-                    });
-                    shell.rm('-rf', '/montages/');
+                    shell.exec(
+                        `magick ./montages/${imageName}_montage.png -quality 50 -define webp:lossless=true ./montages/${imageName}_montage.webp`,
+                        () => {
+                            message
+                                .reply(
+                                    'Montage made for your upscale of ' + lr,
+                                    {
+                                        files: [
+                                            `./montages/${imageName}_montage.webp`
+                                        ]
+                                    }
+                                )
+                                .then(() =>
+                                    shell.rm(
+                                        '-f',
+                                        `./montages/${imageName}_montage.png`
+                                    )
+                                )
+                                .then(() => {
+                                    shell.rm(
+                                        '-f',
+                                        `./montages/${imageName}_montage.webp`
+                                    );
+                                });
+                        }
+                    );
                 }
                 resolve(stdout ? stdout : stderr);
             }
