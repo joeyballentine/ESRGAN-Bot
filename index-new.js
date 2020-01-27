@@ -195,9 +195,9 @@ function checkImage(image) {
 
 async function process(job) {
     if (job.downscale) await downscale(job.image, job.downscale, job.filter);
-    //split();
+    await split();
     await upscale(job.image, job.model);
-    //merge();
+    await merge(job.image);
     optimize();
 
     if (job.montage) montage(job.image, job.model, job.message);
@@ -332,11 +332,14 @@ function montage(image, model, message) {
 }
 
 function split() {
-    shell.exec(`./scripts/split.sh`);
+    shell.exec(`./scripts/split.sh ${esrganPath}/LR`);
 }
 
-function merge() {
-    shell.exec(`./scripts/merge.sh`);
+function merge(image) {
+    let imageName = image.split('.')[0];
+    shell.exec(
+        `./scripts/merge.sh ${esrganPath}/LR ${esrganPath}/results ${imageName}`
+    );
 }
 
 function optimize() {
