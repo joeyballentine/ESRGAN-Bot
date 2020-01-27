@@ -7,6 +7,7 @@ const request = require(`request`);
 // File stuff
 const fs = require(`fs`);
 const fsExtra = require('fs-extra');
+const sizeOf = require('image-size');
 
 // Image downloading stuff
 const isImageUrl = require('is-image-url');
@@ -23,7 +24,7 @@ const queue = new Map();
 const prefix = '!';
 
 // Change these depending on what you want to allow
-const pixelLimit = 500 * 500;
+const pixelLimit = 1000 * 1000;
 const sizeLimit = 500000;
 
 // Path to ESRGAN. Should be initialized by a submodule and is meant to be used with BlueAmulet's fork
@@ -95,7 +96,8 @@ client.on('message', async message => {
             downscale: false,
             filter: 'box',
             montage: false,
-            message: message
+            message: message,
+            split: false
         };
 
         // Parsing the extra arguments
@@ -123,6 +125,11 @@ client.on('message', async message => {
         // Montage
         if (args.includes('-montage')) {
             upscaleJob.montage = true;
+        }
+
+        let dimensions = sizeOf(esrganPath + '/LR/' + image);
+        if (dimensions.width * dimensions.height >= pixelLimit) {
+            upscaleJob.split = true;
         }
 
         // Checks if the image is valid to be upscaled
@@ -195,9 +202,13 @@ function checkImage(image) {
 
 async function process(job) {
     if (job.downscale) await downscale(job.image, job.downscale, job.filter);
-    await split();
+
+    if (job.split) await split();
+
     await upscale(job.image, job.model);
-    await merge(job.image);
+
+    if (job.split) await merge(job.image);
+
     optimize();
 
     if (job.montage) montage(job.image, job.model, job.message);
@@ -332,14 +343,26 @@ function montage(image, model, message) {
 }
 
 function split() {
-    shell.exec(`./scripts/split.sh ${esrganPath}/LR`);
+    return new Promise((resolve, reject) => {
+        shell.exec(
+            `./scripts/split.sh ${esrganPath}/LR`,
+            (error, stdout, stderr) => {
+                resolve();
+            }
+        );
+    });
 }
 
 function merge(image) {
     let imageName = image.split('.')[0];
-    shell.exec(
-        `./scripts/merge.sh ${esrganPath}/LR ${esrganPath}/results ${imageName}`
-    );
+    return new Promise((resolve, reject) => {
+        shell.exec(
+            `./scripts/merge.sh ${esrganPath}/LR ${esrganPath}/results ${imageName}`,
+            (error, stdout, stderr) => {
+                resolve();
+            }
+        );
+    });
 }
 
 function optimize() {
