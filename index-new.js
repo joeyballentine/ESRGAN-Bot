@@ -24,7 +24,7 @@ const queue = new Map();
 const prefix = '!';
 
 // Change these depending on what you want to allow
-const pixelLimit = 1000 * 1000;
+const pixelLimit = 1000;
 const sizeLimit = 500000;
 
 // Path to ESRGAN. Should be initialized by a submodule and is meant to be used with BlueAmulet's fork
@@ -128,7 +128,11 @@ client.on('message', async message => {
         }
 
         let dimensions = sizeOf(esrganPath + '/LR/' + image);
-        if (dimensions.width * dimensions.height >= pixelLimit) {
+        if (upscaleJob.downscale) {
+            dimensions.width /= upscaleJob.downscale;
+            dimensions.height /= upscaleJob.downscale;
+        }
+        if (dimensions.width >= pixelLimit || dimensions.height >= pixelLimit) {
             upscaleJob.split = true;
         }
 
@@ -205,19 +209,30 @@ async function process(job) {
 
     if (job.split) await split();
 
-    await upscale(job.image, job.model);
+    await upscale(job.image, job.model, job.message);
 
     if (job.split) await merge(job.image);
 
-    optimize();
+    await optimize(job.image);
 
-    if (job.montage) montage(job.image, job.model, job.message);
+    if (job.montage && !job.split)
+        await montage(job.image, job.model, job.message);
+
+    let fileNames = fs.readdirSync(`${esrganPath}/results/`);
+    let files = [];
+    for (let file of fileNames) {
+        files.push(`${esrganPath}/results/${file}`);
+    }
 
     return job.message
         .reply(`Upscaled using ${job.model}`, {
-            files: [`${esrganPath}/results/${job.image.split('.')[0]}_rlt.png`]
+            // files: [
+            //     `${esrganPath}/results/${job.image.split('.')[0]}_rlt.${format}`
+            // ]
+            files: files
         })
         .then(() => {
+            emptyDirs();
             queue.get(0).jobs.shift();
             try {
                 if (queue.get(0).jobs.length > 0) {
@@ -233,7 +248,7 @@ async function process(job) {
         });
 }
 
-function upscale(image, model) {
+function upscale(image, model, message) {
     return new Promise((resolve, reject) => {
         let args = {
             args: [
@@ -255,19 +270,21 @@ function upscale(image, model) {
                 image.split('.')[0]
             }_rlt.png`;
 
-            try {
-                if (!fs.existsSync(filePath)) {
+            fs.readdir(`${esrganPath}/results/`, function(err, files) {
+                if (err) {
                     return message.channel.send(
                         'Sorry, there was an error processing your image.'
                     );
                 } else {
-                    resolve();
+                    if (!files.length) {
+                        return message.channel.send(
+                            'Sorry, there was an error processing your image.'
+                        );
+                    } else {
+                        resolve();
+                    }
                 }
-            } catch (err) {
-                return message.channel.send(
-                    'Sorry, there was an error processing your image.'
-                );
-            }
+            });
         });
     });
 }
@@ -300,7 +317,7 @@ function montage(image, model, message) {
     return new Promise((resolve, reject) => {
         //shell.rm('-rf', '/montages/');
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png"`,
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results"`,
             { silent: true },
             (error, stdout, stderr) => {
                 if (error) {
@@ -310,43 +327,48 @@ function montage(image, model, message) {
                     );
                 } else {
                     shell.exec(
-                        `magick ./montages/${imageName}_montage.png -quality 50 -define webp:lossless=true ./montages/${imageName}_montage.webp`,
+                        `magick ${esrganPath}/results/${imageName}_montage.png -quality 50 -define webp:lossless=true ${esrganPath}/results/${imageName}_montage.webp`,
                         () => {
-                            message
-                                .reply(
-                                    'Montage made for your upscale of ' + lr,
-                                    {
-                                        files: [
-                                            `./montages/${imageName}_montage.webp`
-                                        ]
-                                    }
-                                )
-                                .then(() =>
-                                    shell.rm(
-                                        '-f',
-                                        `./montages/${imageName}_montage.png`
-                                    )
-                                )
-                                .then(() => {
-                                    shell.rm(
-                                        '-f',
-                                        `./montages/${imageName}_montage.webp`
-                                    );
-                                });
+                            // message
+                            //     .reply(
+                            //         'Montage made for your upscale of ' + lr,
+                            //         {
+                            //             files: [
+                            //                 `./montages/${imageName}_montage.webp`
+                            //             ]
+                            //         }
+                            //     )
+                            //     .then(() =>
+                            //         shell.rm(
+                            //             '-f',
+                            //             `./montages/${imageName}_montage.png`
+                            //         )
+                            //     )
+                            //     .then(() => {
+                            //         shell.rm(
+                            //             '-f',
+                            //             `./montages/${imageName}_montage.webp`
+                            //         );
+                            //     });
+                            resolve(stdout ? stdout : stderr);
                         }
                     );
                 }
-                resolve(stdout ? stdout : stderr);
+                //resolve(stdout ? stdout : stderr);
             }
         );
     });
 }
 
 function split() {
+    let path = require('path');
+    let absolutePath = path.resolve('./scripts/split.sh');
+
     return new Promise((resolve, reject) => {
         shell.exec(
-            `./scripts/split.sh ${esrganPath}/LR`,
+            `${absolutePath} ${esrganPath}/LR`,
             (error, stdout, stderr) => {
+                if (error) console.log(error);
                 resolve();
             }
         );
@@ -354,30 +376,55 @@ function split() {
 }
 
 function merge(image) {
+    let path = require('path');
+    let absolutePath = path.resolve('./scripts/merge.sh');
+
     let imageName = image.split('.')[0];
     return new Promise((resolve, reject) => {
         shell.exec(
-            `./scripts/merge.sh ${esrganPath}/LR ${esrganPath}/results ${imageName}`,
+            `${absolutePath} ${esrganPath}/LR ${esrganPath}/results ${imageName}`,
             (error, stdout, stderr) => {
+                if (error) console.log(error);
                 resolve();
             }
         );
     });
 }
 
-function optimize() {
+function optimize(image) {
     const imagemin = require('imagemin');
     const imageminOptipng = require('imagemin-optipng');
 
-    (async () => {
-        await imagemin(
-            [`${esrganPath}/results/*.png`],
-            `${esrganPath}/results/`,
-            {
-                use: [imageminOptipng()]
-            }
-        );
+    let imageName = image.split('.')[0];
 
-        console.log('Images optimized!');
-    })();
+    return new Promise((resolve, reject) => {
+        (async () => {
+            await imagemin([`${esrganPath}/results/${imageName}_rlt.png`], {
+                use: [imageminOptipng()]
+            });
+
+            //console.log('Images optimized!');
+
+            // Checks filesize for Discord's limits and converts to lossy webp if >= 8mb
+            let stats = fs.statSync(
+                `${esrganPath}/results/${imageName}_rlt.png`
+            );
+            let fileSizeInBytes = stats['size'];
+            let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
+            if (fileSizeInMegabytes >= 8) {
+                shell.exec(
+                    `magick ${esrganPath}/results/${imageName}_rlt.png -quality 50 -define webp:lossless=false ${esrganPath}/results/${imageName}_rlt.webp`,
+                    (error, stdout, stderr) => {
+                        shell.rm(
+                            '-f',
+                            `${esrganPath}/results/${imageName}_rlt.png`
+                        );
+                        resolve();
+                    }
+                );
+            } else {
+                resolve();
+            }
+        })();
+    });
 }
