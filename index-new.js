@@ -79,7 +79,6 @@ client.on('message', async message => {
 
         // Downloads the image
         let image = url.split('/').pop();
-        await download(url, image);
 
         // Gets the model name from the model argument
         let model = args[0].includes('.pth') ? args[0] : args[0] + '.pth';
@@ -102,20 +101,9 @@ client.on('message', async message => {
 
         // Parsing the extra arguments
 
-        // downscale
-        //upscaleJob.downscale = args[args.indexOf(arg) + 1];
-        // upscaleJob.downscale = ['--downscale', '-r'].some(arg => {
-        //     console.log('downscale!')
-        //     if (args.includes(arg)) {
-        //         console.log(args[args.indexOf(arg) + 1])
-        //         return args[args.indexOf(arg) + 1]
-        //     };
-        // })
-
         if (args.includes('-downscale')) {
             upscaleJob.downscale = args[args.indexOf('-downscale') + 1];
         }
-        //console.log(upscaleJob.downscale);
 
         // filter
         if (args.includes('-filter')) {
@@ -125,15 +113,6 @@ client.on('message', async message => {
         // Montage
         if (args.includes('-montage')) {
             upscaleJob.montage = true;
-        }
-
-        let dimensions = sizeOf(esrganPath + '/LR/' + image);
-        if (upscaleJob.downscale) {
-            dimensions.width /= upscaleJob.downscale;
-            dimensions.height /= upscaleJob.downscale;
-        }
-        if (dimensions.width >= pixelLimit || dimensions.height >= pixelLimit) {
-            upscaleJob.split = true;
         }
 
         // Checks if the image is valid to be upscaled
@@ -205,6 +184,16 @@ function checkImage(image) {
 }
 
 async function process(job) {
+    await download(job.url, job.image);
+    let dimensions = sizeOf(esrganPath + '/LR/' + job.image);
+    if (job.downscale) {
+        dimensions.width /= job.downscale;
+        dimensions.height /= job.downscale;
+    }
+    if (dimensions.width >= pixelLimit || dimensions.height >= pixelLimit) {
+        job.split = true;
+    }
+
     if (job.downscale) await downscale(job.image, job.downscale, job.filter);
 
     if (job.split) await split();
