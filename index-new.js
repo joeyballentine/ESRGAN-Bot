@@ -90,6 +90,7 @@ client.on('message', async message => {
 
         // The job sent for processing
         let upscaleJob = {
+            url: url,
             model: model,
             image: image,
             downscale: false,
@@ -101,11 +102,12 @@ client.on('message', async message => {
 
         // Parsing the extra arguments
 
+        // Downscale
         if (args.includes('-downscale')) {
             upscaleJob.downscale = args[args.indexOf('-downscale') + 1];
         }
 
-        // filter
+        // Filter
         if (args.includes('-filter')) {
             upscaleJob.filter = args[args.indexOf('-filter') + 1];
         }
@@ -139,7 +141,9 @@ client.on('message', async message => {
             } else {
                 queue.get(0).jobs.push(upscaleJob);
                 return message.channel.send(
-                    `${image} has been added to the queue! Your image is #${queue.length} in line for processing.`
+                    `${image} has been added to the queue! Your image is #${
+                        queue.get(0).jobs.length
+                    } in line for processing.`
                 );
             }
         } else {
@@ -184,7 +188,10 @@ function checkImage(image) {
 }
 
 async function process(job) {
+    // Downloads the image
     await download(job.url, job.image);
+
+    // Checks image to see if it should split
     let dimensions = sizeOf(esrganPath + '/LR/' + job.image);
     if (job.downscale) {
         dimensions.width /= job.downscale;
@@ -194,19 +201,26 @@ async function process(job) {
         job.split = true;
     }
 
+    // Downscales the image if argument provided
     if (job.downscale) await downscale(job.image, job.downscale, job.filter);
 
+    // Splits if needed
     if (job.split) await split();
 
+    // Upscales the image(s)
     await upscale(job.image, job.model, job.message);
 
+    // Merges the images if split was needed
     if (job.split) await merge(job.image);
 
+    // Optimizes the images
     await optimize(job.image);
 
+    // Montages the LR and result if argument provided
     if (job.montage && !job.split)
         await montage(job.image, job.model, job.message);
 
+    // Adds all files in results to an array which it will use to send attachments
     let fileNames = fs.readdirSync(`${esrganPath}/results/`);
     let files = [];
     for (let file of fileNames) {
@@ -316,29 +330,12 @@ function montage(image, model, message) {
                     );
                 } else {
                     shell.exec(
-                        `magick ${esrganPath}/results/${imageName}_montage.png -quality 50 -define webp:lossless=true ${esrganPath}/results/${imageName}_montage.webp`,
+                        `magick ${esrganPath}/results/${imageName}_montage.png -quality 50 -define webp:target-size=8000000 ${esrganPath}/results/${imageName}_montage.webp`,
                         () => {
-                            // message
-                            //     .reply(
-                            //         'Montage made for your upscale of ' + lr,
-                            //         {
-                            //             files: [
-                            //                 `./montages/${imageName}_montage.webp`
-                            //             ]
-                            //         }
-                            //     )
-                            //     .then(() =>
-                            //         shell.rm(
-                            //             '-f',
-                            //             `./montages/${imageName}_montage.png`
-                            //         )
-                            //     )
-                            //     .then(() => {
-                            //         shell.rm(
-                            //             '-f',
-                            //             `./montages/${imageName}_montage.webp`
-                            //         );
-                            //     });
+                            shell.rm(
+                                '-f',
+                                `${esrganPath}/results/${imageName}_montage.png`
+                            );
                             resolve(stdout ? stdout : stderr);
                         }
                     );
@@ -402,7 +399,7 @@ function optimize(image) {
             let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
             if (fileSizeInMegabytes >= 8) {
                 shell.exec(
-                    `magick ${esrganPath}/results/${imageName}_rlt.png -quality 50 -define webp:lossless=false ${esrganPath}/results/${imageName}_rlt.webp`,
+                    `magick ${esrganPath}/results/${imageName}_rlt.png -quality 50 -define webp:target-size=8000000 ${esrganPath}/results/${imageName}_rlt.webp`,
                     (error, stdout, stderr) => {
                         shell.rm(
                             '-f',
