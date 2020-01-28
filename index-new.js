@@ -8,22 +8,17 @@ const request = require(`request`);
 const fs = require(`fs`);
 const fsExtra = require('fs-extra');
 const sizeOf = require('image-size');
-
-// Image downloading stuff
 const isImageUrl = require('is-image-url');
 
-// Python shell
+// Shell stuff
 const { PythonShell } = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
 const queue = new Map();
 
-// Path to ESRGAN. Should be initialized by a submodule and is meant to be used with BlueAmulet's fork
-const esrganPath = './ESRGAN/';
-
 // Configuration
-const { token, prefix, pixelLimit } = require('./config.json');
+const { token, prefix, pixelLimit, esrganPath } = require('./config.json');
 
 // Connects to the bot account and empties the directories
 client.on('ready', () => {
@@ -33,10 +28,6 @@ client.on('ready', () => {
 
 // Message event handler
 client.on('message', async message => {
-    // Removes extra spaces between commands
-    // this doesnt work
-    message.content = message.content.replace(/ +(?= )/g, '');
-
     // The bot will not respond unless the prefix is typed
     // It will also ignore anything sent by itself
     if (!message.content.startsWith(prefix) || message.author.bot) return;
@@ -146,6 +137,57 @@ client.on('message', async message => {
                 `Sorry, that image cannot be processed.`
             );
         }
+    } else if (command === 'models') {
+        let files = fs.readdirSync(`${esrganPath}/models/`);
+        let table = require('markdown-table');
+        let models = [];
+        for (let i = 0; i < files.length; i = i + 4) {
+            models.push(files.slice(i, i + 4));
+        }
+        return message.channel.send(
+            '```' +
+                table(models, {
+                    rule: false
+                }) +
+                '```'
+        );
+        //return message.channel.send(files);
+    } else if (command === 'add') {
+        let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
+        let url = args[0];
+        if (url.includes('drive.google.com')) {
+            url = url.replace('/view', '');
+            url = url.split(
+                `https://docs.google.com/uc?export=download&id=${url
+                    .split('/')
+                    .pop()}`
+            );
+        }
+        download(args[0], `${esrganPath}/models/${modelName}`);
+    } else if (command === 'help') {
+        let help = `
+Commands:
+
+\`${prefix}upscale [model]\` // Upscales attached image using specified model
+
+\`${prefix}upscale [url] [model]\` // Upscales linked image using specified model
+
+\`${prefix}add [model url] [nickname]\` // Adds model from url, with a nickname (to avoid typing out long model names)
+
+\`${prefix}models\` // Lists all models
+
+\`${prefix}help\` // Shows this information again
+
+Optional upscale args:
+
+\`-downscale [amount]\` // Downscales the image by the amount listed
+
+\`-filter [imagemagick filter]\` // Filter to be used for downscaling. Must be vlaid imagemagick filter. Defaults to box.
+
+\`-montage\` // Creates aside by side comparison of the LR and result after upscaling
+
+Example: \`${prefix}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter point -montage\``;
+        return message.channel.send(help);
     }
 });
 
@@ -156,12 +198,12 @@ function emptyDirs() {
     fsExtra.emptyDirSync(esrganPath + '/LR/');
 }
 
-function download(url, image) {
+function download(url, destination) {
     return new Promise((resolve, reject) => {
         request
             .get(url)
             .on('error', console.error)
-            .pipe(fs.createWriteStream(esrganPath + '/LR/' + image))
+            .pipe(fs.createWriteStream(destination))
             .on('finish', () => {
                 console.log(`The file is finished downloading.`);
                 resolve();
@@ -184,7 +226,7 @@ function checkImage(image) {
 
 async function process(job) {
     // Downloads the image
-    await download(job.url, job.image);
+    await download(job.url, esrganPath + '/LR/' + job.image);
 
     // Checks image to see if it should split
     let dimensions = sizeOf(esrganPath + '/LR/' + job.image);
