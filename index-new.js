@@ -345,7 +345,6 @@ function downscale(image, amount, filter) {
 }
 
 function montage(image, model, message) {
-    //TODO extract image % difference for scaling
     let lr = `${esrganPath}LR/${image}`;
     let imageName = image.split('.')[0];
     let result = `${esrganPath}results/${imageName}_rlt.png`;
@@ -355,7 +354,6 @@ function montage(image, model, message) {
     let absolutePath = path.resolve('./scripts/montage.sh');
 
     return new Promise((resolve, reject) => {
-        //shell.rm('-rf', '/montages/');
         shell.exec(
             `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results"`,
             { silent: true },
@@ -367,7 +365,7 @@ function montage(image, model, message) {
                     );
                 } else {
                     shell.exec(
-                        `magick ${esrganPath}/results/${imageName}_montage.png -quality 50 -define webp:lossless=true ${esrganPath}/results/${imageName}_montage.webp`,
+                        `magick ${esrganPath}/results/${imageName}_montage.png -define webp:lossless=false -define webp:target-size:8000000 -define webp:pass=4 -define webp:auto-filter=true ${esrganPath}/results/${imageName}_montage.webp`,
                         () => {
                             shell.rm(
                                 '-f',
@@ -377,7 +375,6 @@ function montage(image, model, message) {
                         }
                     );
                 }
-                //resolve(stdout ? stdout : stderr);
             }
         );
     });
@@ -436,13 +433,27 @@ function optimize(image) {
             let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
             if (fileSizeInMegabytes >= 8) {
                 shell.exec(
-                    `magick ${esrganPath}/results/${imageName}_rlt.png -quality 50 -define webp:target-size=8000000 ${esrganPath}/results/${imageName}_rlt.webp`,
+                    `magick ${esrganPath}/results/${imageName}_rlt.png -quality 50 -define webp:lossless=true -define webp:target-size:8000000 ${esrganPath}/results/${imageName}_rlt.webp`,
                     (error, stdout, stderr) => {
                         shell.rm(
                             '-f',
                             `${esrganPath}/results/${imageName}_rlt.png`
                         );
-                        resolve();
+                        let stats = fs.statSync(
+                            `${esrganPath}/results/${imageName}_rlt.webp`
+                        );
+                        let fileSizeInBytes = stats['size'];
+                        let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
+                        if (fileSizeInMegabytes >= 8) {
+                            shell.exec(
+                                `magick ${esrganPath}/results/${imageName}_rlt.webp -define webp:lossless=false -define webp:target-size:8000000 -define webp:pass=4 ${esrganPath}/results/${imageName}_rlt.webp`,
+                                (error, stdout, stderr) => {
+                                    resolve();
+                                }
+                            );
+                        } else {
+                            resolve();
+                        }
                     }
                 );
             } else {
