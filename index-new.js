@@ -205,7 +205,7 @@ function download(url, destination) {
             .on('error', console.error)
             .pipe(fs.createWriteStream(destination))
             .on('finish', () => {
-                console.log(`The file is finished downloading.`);
+                // console.log(`The file is finished downloading.`);
                 resolve();
             })
             .on('error', error => {
