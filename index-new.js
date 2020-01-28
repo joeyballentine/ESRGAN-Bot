@@ -151,7 +151,6 @@ client.on('message', async message => {
                 }) +
                 '```'
         );
-        //return message.channel.send(files);
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
         let url = args[0];
@@ -250,12 +249,12 @@ async function process(job) {
     // Merges the images if split was needed
     if (job.split) await merge(job.image);
 
-    // Optimizes the images
-    await optimize(job.image);
-
     // Montages the LR and result if argument provided
     if (job.montage && !job.split)
         await montage(job.image, job.model, job.message);
+
+    // Optimizes the images
+    await optimize(`${esrganPath}/results/`);
 
     // Adds all files in results to an array which it will use to send attachments
     let fileNames = fs.readdirSync(`${esrganPath}/results/`);
@@ -306,20 +305,18 @@ function upscale(image, model, message) {
                 );
             }
 
-            let filePath = `${esrganPath}/results/${
-                image.split('.')[0]
-            }_rlt.png`;
-
             fs.readdir(`${esrganPath}/results/`, function(err, files) {
                 if (err) {
-                    return message.channel.send(
+                    message.channel.send(
                         'Sorry, there was an error processing your image.'
                     );
+                    reject();
                 } else {
                     if (!files.length) {
-                        return message.channel.send(
+                        message.channel.send(
                             'Sorry, there was an error processing your image.'
                         );
+                        reject();
                     } else {
                         resolve();
                     }
@@ -336,7 +333,8 @@ function downscale(image, amount, filter) {
                 '%'} -filter ${filter} ${esrganPath}LR/*.*`,
             (error, stdout, stderr) => {
                 if (error) {
-                    console.warn(error);
+                    console.log(error);
+                    reject();
                 }
                 resolve(stdout ? stdout : stderr);
             }
@@ -359,21 +357,13 @@ function montage(image, model, message) {
             { silent: true },
             (error, stdout, stderr) => {
                 if (error) {
-                    console.warn(error);
+                    console.log(error);
                     message.channel.send(
                         'There was an error making your montage.'
                     );
+                    reject();
                 } else {
-                    shell.exec(
-                        `magick ${esrganPath}/results/${imageName}_montage.png -define webp:lossless=false -define webp:target-size:8000000 -define webp:pass=4 -define webp:auto-filter=true ${esrganPath}/results/${imageName}_montage.webp`,
-                        () => {
-                            shell.rm(
-                                '-f',
-                                `${esrganPath}/results/${imageName}_montage.png`
-                            );
-                            resolve(stdout ? stdout : stderr);
-                        }
-                    );
+                    resolve(stdout ? stdout : stderr);
                 }
             }
         );
@@ -388,7 +378,10 @@ function split() {
         shell.exec(
             `${absolutePath} ${esrganPath}/LR`,
             (error, stdout, stderr) => {
-                if (error) console.log(error);
+                if (error) {
+                    console.log(error);
+                    reject();
+                }
                 resolve();
             }
         );
@@ -411,54 +404,73 @@ function merge(image) {
     });
 }
 
-function optimize(image) {
+function optimize(dir) {
     const imagemin = require('imagemin');
     const imageminOptipng = require('imagemin-optipng');
 
-    let imageName = image.split('.')[0];
-
     return new Promise((resolve, reject) => {
         (async () => {
-            await imagemin([`${esrganPath}/results/${imageName}_rlt.png`], {
+            await imagemin([dir], {
                 use: [imageminOptipng()]
             });
 
-            //console.log('Images optimized!');
+            // Encodes any images that are still over 8mb to lossless webp
+            for (let file of fs.readdirSync(dir)) {
+                if (!checkUnderSize(dir + file, 8)) {
+                    await webpLossless(dir + file);
+                }
+            }
 
-            // Checks filesize for Discord's limits and converts to lossy webp if >= 8mb
-            let stats = fs.statSync(
-                `${esrganPath}/results/${imageName}_rlt.png`
-            );
-            let fileSizeInBytes = stats['size'];
-            let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
-            if (fileSizeInMegabytes >= 8) {
-                shell.exec(
-                    `magick ${esrganPath}/results/${imageName}_rlt.png -quality 50 -define webp:lossless=true -define webp:target-size:8000000 ${esrganPath}/results/${imageName}_rlt.webp`,
-                    (error, stdout, stderr) => {
-                        shell.rm(
-                            '-f',
-                            `${esrganPath}/results/${imageName}_rlt.png`
-                        );
-                        let stats = fs.statSync(
-                            `${esrganPath}/results/${imageName}_rlt.webp`
-                        );
-                        let fileSizeInBytes = stats['size'];
-                        let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
-                        if (fileSizeInMegabytes >= 8) {
-                            shell.exec(
-                                `magick ${esrganPath}/results/${imageName}_rlt.webp -define webp:lossless=false -define webp:target-size:8000000 -define webp:pass=4 ${esrganPath}/results/${imageName}_rlt.webp`,
-                                (error, stdout, stderr) => {
-                                    resolve();
-                                }
-                            );
-                        } else {
-                            resolve();
-                        }
-                    }
-                );
-            } else {
+            // Encodes any images that are still over 8mb to lossy webp
+            for (let file of fs.readdirSync(dir)) {
+                if (!checkUnderSize(dir + file, 8)) {
+                    await webpLossy(dir + file);
+                }
+            }
+
+            resolve();
+        })();
+    });
+}
+
+function checkUnderSize(image, size) {
+    let stats = fs.statSync(image);
+    let fileSizeInBytes = stats['size'];
+    let fileSizeInMegabytes = fileSizeInBytes / 1000000.0;
+    return fileSizeInMegabytes < size;
+}
+
+function webpLossless(image) {
+    return new Promise((resolve, reject) => {
+        let webpName = image.replace('.png', '.webp');
+        shell.exec(
+            `magick ${image} -quality 50 -define webp:lossless=true -define webp:target-size:8000000 ${webpName}`,
+            (error, stdout, stderr) => {
+                if (error) {
+                    console.log(error);
+                    reject();
+                }
+                shell.rm('-f', image);
                 resolve();
             }
-        })();
+        );
+    });
+}
+
+function webpLossy(image) {
+    return new Promise((resolve, reject) => {
+        let webpName = image.replace('.png', '.webp');
+        let removePNG = image.includes('.png') ? true : false;
+        shell.exec(
+            `magick ${image} -quality 75 -define webp:lossless=false -define webp:target-size:8000000 -define webp:pass=4 ${webpName}`,
+            (error, stdout, stderr) => {
+                if (error) {
+                    console.log(error);
+                    reject();
+                }
+                removePNG ? shell.rm('-f', image) : resolve();
+                resolve();
+            }
+        );
     });
 }
