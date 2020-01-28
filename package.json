@@ -9,7 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "curl": "^0.1.4",
     "discord.js": "^11.5.1",
     "fs-extra": "^8.1.0",
     "image-size": "^0.8.3",

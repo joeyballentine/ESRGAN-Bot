@@ -11,7 +11,6 @@ const sizeOf = require('image-size');
 
 // Image downloading stuff
 const isImageUrl = require('is-image-url');
-// const download = require('image-downloader');
 
 // Python shell
 const { PythonShell } = require('python-shell');
@@ -20,14 +19,11 @@ const shell = require('shelljs');
 // The image upscale queue
 const queue = new Map();
 
-// The prefix used for commands
-const prefix = '!';
-
-// Change these depending on what you want to allow
-const pixelLimit = 1000;
-
 // Path to ESRGAN. Should be initialized by a submodule and is meant to be used with BlueAmulet's fork
 const esrganPath = './ESRGAN/';
+
+// Configuration
+const { token, prefix, pixelLimit } = require('./config.json');
 
 // Connects to the bot account and empties the directories
 client.on('ready', () => {
@@ -153,7 +149,7 @@ client.on('message', async message => {
     }
 });
 
-client.login('NjYzMTA3NTQ3OTg4NzU0NDUy.XhDtGg.CGxZaTJRr7OmYJOVbBlY2j9bspc');
+client.login(token);
 
 function emptyDirs() {
     fsExtra.emptyDirSync(esrganPath + '/results/');
