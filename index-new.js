@@ -116,7 +116,7 @@ client.on('message', async message => {
 
                 try {
                     message.channel.send(`Your image is being processed.`);
-                    process(queue.get(0).jobs[0]);
+                    await process(queue.get(0).jobs[0]);
                 } catch (err) {
                     // If something goes wrong here we just reset the entire queue
                     // This probably isn't ideal but it's what the music bots do
@@ -182,7 +182,7 @@ Optional upscale args:
 
 \`-downscale [amount]\` // Downscales the image by the amount listed
 
-\`-filter [imagemagick filter]\` // Filter to be used for downscaling. Must be vlaid imagemagick filter. Defaults to box.
+\`-filter [imagemagick filter]\` // Filter to be used for downscaling. Must be valid imagemagick filter. Defaults to box.
 
 \`-montage\` // Creates aside by side comparison of the LR and result after upscaling
 
@@ -367,7 +367,7 @@ function montage(image, model, message) {
                     );
                 } else {
                     shell.exec(
-                        `magick ${esrganPath}/results/${imageName}_montage.png -quality 50 -define webp:target-size=8000000 ${esrganPath}/results/${imageName}_montage.webp`,
+                        `magick ${esrganPath}/results/${imageName}_montage.png -quality 50 -define webp:lossless=true ${esrganPath}/results/${imageName}_montage.webp`,
                         () => {
                             shell.rm(
                                 '-f',
