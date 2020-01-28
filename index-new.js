@@ -25,7 +25,6 @@ const prefix = '!';
 
 // Change these depending on what you want to allow
 const pixelLimit = 1000;
-const sizeLimit = 500000;
 
 // Path to ESRGAN. Should be initialized by a submodule and is meant to be used with BlueAmulet's fork
 const esrganPath = './ESRGAN/';
