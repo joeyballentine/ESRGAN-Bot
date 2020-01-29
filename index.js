@@ -219,7 +219,11 @@ function download(url, destination) {
 function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
-            filetype => image.split('.').pop() === filetype.toLowerCase()
+            filetype =>
+                image
+                    .split('.')
+                    .pop()
+                    .toLowerCase() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -228,8 +232,10 @@ function checkImage(image) {
 
 // Processes an upscale job
 async function process(job) {
-    // Downloads the image
     await download(job.url, esrganPath + '/LR/' + job.image);
+
+    await convertToPNG(job.image);
+    job.image = job.image.split('.')[0] + '.png';
 
     // Checks image to see if it should split
     let dimensions = sizeOf(esrganPath + '/LR/' + job.image);
@@ -262,33 +268,56 @@ async function process(job) {
 
     // Adds all files in results to an array which it will use to send attachments
     let fileNames = fs.readdirSync(`${esrganPath}/results/`);
-    let files = [];
+    let resultImage;
+    let montageImage;
     for (let file of fileNames) {
-        files.push(`${esrganPath}/results/${file}`);
+        if (file.includes(job.image.split('.')[0])) {
+            resultImage = `${esrganPath}/results/${file}`;
+        }
+        if (file.includes('_montage')) {
+            montageImage = `${esrganPath}/results/${file}`;
+        }
     }
 
-    return job.message
+    job.message
         .reply(`Upscaled using ${job.model}`, {
             // files: [
             //     `${esrganPath}/results/${job.image.split('.')[0]}_rlt.${format}`
             // ]
-            files: files
+            files: [resultImage]
         })
         .then(() => {
-            emptyDirs();
-            queue.get(0).jobs.shift();
-            try {
-                if (queue.get(0).jobs.length > 0) {
-                    process(queue.get(0).jobs[0]);
-                } else {
-                    queue.delete(0);
-                }
-            } catch (err) {
-                console.log(err);
-                queue.delete(0);
-                return job.message.channel.send(err);
+            if (job.montage) {
+                job.message.channel
+                    .send(
+                        `${job.message.author}, here is the montage you requested`,
+                        {
+                            files: [montageImage]
+                        }
+                    )
+                    .then(() => {
+                        processNext();
+                    });
+            } else {
+                processNext();
             }
-        });
+        })
+        .catch(console.error);
+}
+
+function processNext() {
+    emptyDirs();
+    queue.get(0).jobs.shift();
+    try {
+        if (queue.get(0).jobs.length > 0) {
+            process(queue.get(0).jobs[0]);
+        } else {
+            queue.delete(0);
+        }
+    } catch (err) {
+        console.log(err);
+        queue.delete(0);
+    }
 }
 
 // Runs ESRGAN
@@ -331,12 +360,40 @@ function upscale(image, model, message) {
     });
 }
 
+function convertToPNG(image) {
+    let newImage = image.split('.')[0] + '.png';
+    return new Promise((resolve, reject) => {
+        if (image.split('.')[1].toLowerCase === 'png') {
+            resolve();
+        } else {
+            shell.mkdir(`${esrganPath}/LR/_TMP`);
+            shell.exec(
+                `magick convert ${esrganPath}/LR/${image} -format png ${esrganPath}/LR/_TMP/${newImage}`,
+                (error, stdout, stderr) => {
+                    if (error) {
+                        console.log(error);
+                        reject();
+                    }
+                    shell.rm('-f', `${esrganPath}/LR/${image}`);
+                    shell.mv(
+                        '-f',
+                        `${esrganPath}/LR/_TMP/${newImage}`,
+                        `${esrganPath}/LR/${newImage}`
+                    );
+                    shell.rm('-r', `${esrganPath}/LR/_TMP`);
+                    resolve(stdout ? stdout : stderr);
+                }
+            );
+        }
+    });
+}
+
 // Downscales using ImageMagick
 function downscale(image, amount, filter) {
     return new Promise((resolve, reject) => {
         shell.exec(
             `magick mogrify -resize ${(1.0 / amount) * 100.0 +
-                '%'} -filter ${filter} ${esrganPath}LR/*.*`,
+                '%'} -filter ${filter} -format png ${esrganPath}/LR/${image}`,
             (error, stdout, stderr) => {
                 if (error) {
                     console.log(error);
