@@ -22,7 +22,7 @@ resizeLR() {
         fi
     firstFixed=$(basename ${IMAGE_FIRST})
     secondFixed=$(basename ${IMAGE_SECOND})
-    ${MAGICK_COMMAND} convert ${IMAGE_FIRST} -filter point -resize ${autoScale2} ${TMP_FOLDER}/${firstFixed}
+    ${MAGICK_COMMAND} convert ${IMAGE_FIRST} -filter point -resize ${autoScale2} ${TMP_FOLDER}/${firstFixed} &&
     ${MAGICK_COMMAND} convert ${IMAGE_SECOND} -filter point -resize ${UPSCALE_FACTOR_SECOND_IMAGE} ${TMP_FOLDER}/${secondFixed}
 }
 
@@ -33,26 +33,41 @@ resizeLR() {
 # Adds 64px border to bottom of final montage
 # Composites Montage over Background, then composites Text over Montage
 mont() {
-    ${MAGICK_COMMAND} montage -background black ${TMP_FOLDER}/${firstFixed} ${TMP_FOLDER}/${secondFixed} -tile ${TILE_DIM} -geometry +0+0 -depth 8 -define png:color-type=2 -depth 8 ${TMP_FOLDER}/montage.png
-    ${MAGICK_COMMAND} mogrify -filter point -resize ${UPSCALE_FACTOR_GLOBAL} -bordercolor None -border 0x64 -gravity North -chop 0x64 -depth 8 ${TMP_FOLDER}/montage.png
-    RES1="`${MAGICK_COMMAND} identify -format '%wx%h' ${TMP_FOLDER}/montage.png`"
-    RES2="`${MAGICK_COMMAND} identify -format '%w' ${TMP_FOLDER}/montage.png`"
-    ${MAGICK_COMMAND} convert -size ${RES1} pattern:checkerboard -depth 8 ${TMP_FOLDER}/tiles.png
-    ${MAGICK_COMMAND} convert -size ${RES1} "radial-gradient:${COLOR_FIRST}-${COLOR_SECOND}" -depth 8 ${TMP_FOLDER}/gradient.png
-    ${MAGICK_COMMAND} convert ${TMP_FOLDER}/gradient.png \( ${TMP_FOLDER}/tiles.png -alpha set -channel Alpha -evaluate set 40% \) -compose Overlay -composite -depth 8 ${TMP_FOLDER}/BG.png
-    ${MAGICK_COMMAND} convert ${TMP_FOLDER}/BG.png ${TMP_FOLDER}/montage.png -composite -depth 8 ${TMP_FOLDER}/Montage_BG_temp1.png
+    randName1="`cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 8 | head -n1`"
+    FILENAME=$(basename -- "$file")
+    FL="${FILENAME%.*}"
+    BG1="${randName1}_BG1.png"
+    tmpMont="${randName1}_montage.png"
+    tmpMont1="${randName1}_montage_BG1.png"
+    tmpMont2="${randName1}_montage_BG2.png"
+    tmpMont3="${randName1}_montage_BG3.png"
+    tmpMontFin="${randName1}_montage_BGfin.png"
+    tmpTiles="${randName1}_tiles.png"
+    tmpGradient="${randName1}_gradient.png"
 
-    ${MAGICK_COMMAND} convert -channel RGBA -size ${RES1} -resize 200%x400% xc:none -gravity south -pointsize 144 -font "${FONT}" \
-    -fill black -annotate -0+18 ${TEXT_FIRST} -blur 0x11 +noise Poisson -fill white \
-    -stroke black -strokewidth 7 -annotate -0+32 ${TEXT_FIRST} -resize 25% -depth 8 ${TMP_FOLDER}/Montage_BG_temp2.png
+    
+    ${MAGICK_COMMAND} montage -background black ${TMP_FOLDER}/${firstFixed} ${TMP_FOLDER}/${secondFixed} -tile ${TILE_DIM} -geometry +0+0 -depth 8 -define png:color-type=2 -depth 8 ${TMP_FOLDER}/${tmpMont} &&
+    ${MAGICK_COMMAND} mogrify -filter point -resize ${UPSCALE_FACTOR_GLOBAL} -bordercolor None -border 0x64 -gravity North -chop 0x64 -depth 8 ${TMP_FOLDER}/${tmpMont} &&
+    RES1="`${MAGICK_COMMAND} identify -format '%wx%h' ${TMP_FOLDER}/${tmpMont}`" &&
+    RES2="`${MAGICK_COMMAND} identify -format '%w' ${TMP_FOLDER}/${tmpMont}`" &&
+    RES3="`${MAGICK_COMMAND} identify -format '%h' ${TMP_FOLDER}/${tmpMont}`" &&
+    RGRw=$((RES2/4))
+    RGRh=$((RES3/4))
+    ResX4="${RGRw}x${RGRh}"
+    ${MAGICK_COMMAND} convert -size ${ResX4} xc: -tile ./scripts/checkerboard6x6.png -draw "color 0,0 reset" -filter Point -resize ${RES1} -depth 8 ${TMP_FOLDER}/${tmpTiles} &&
+    ${MAGICK_COMMAND} convert -size ${ResX4} "radial-gradient:${COLOR_FIRST}-${COLOR_SECOND}" -filter Spline -resize ${RES1} -depth 8 ${TMP_FOLDER}/${tmpGradient} &&
+    ${MAGICK_COMMAND} convert ${TMP_FOLDER}/${tmpGradient} \( ${TMP_FOLDER}/${tmpTiles} -alpha set -channel Alpha -evaluate set 40% \) -compose Overlay -composite -depth 8 ${TMP_FOLDER}/${BG1} &&
+    ${MAGICK_COMMAND} convert ${TMP_FOLDER}/${BG1} ${TMP_FOLDER}/${tmpMont} -composite -depth 8 ${TMP_FOLDER}/${tmpMont1} &&
 
-    ${MAGICK_COMMAND} convert -channel RGBA -size ${RES1} -resize 200%x400% xc:none -gravity south -pointsize 144 -font "${FONT}" \
-    -fill black -annotate +0+18 ${TEXT_SECOND} -blur 0x11 +noise Poisson -fill white \
-    -stroke black -strokewidth 7 -annotate +0+32 ${TEXT_SECOND} -resize 25% -depth 8 ${TMP_FOLDER}/Montage_BG_temp3.png
+    ${MAGICK_COMMAND} convert -channel RGBA -size ${RES1} -resize 100%x200% xc:none -gravity south -pointsize 75 -font "${FONT}" \
+    -fill white -stroke black -strokewidth 4 -annotate -0+17 ${TEXT_FIRST} -resize 50% -depth 8 ${TMP_FOLDER}/${tmpMont2} &&
 
-    ${MAGICK_COMMAND} montage -channel RGBA -background none ${TMP_FOLDER}/Montage_BG_temp2.png ${TMP_FOLDER}/Montage_BG_temp3.png -tile 2x1 -geometry +0+0 -depth 8 ${TMP_FOLDER}/Montage_BG.png
+    ${MAGICK_COMMAND} convert -channel RGBA -size ${RES1} -resize 100%x200% xc:none -gravity south -pointsize 75 -font "${FONT}" \
+    -fill white -stroke black -strokewidth 4 -annotate +0+17 ${TEXT_SECOND} -resize 50% -depth 8 ${TMP_FOLDER}/${tmpMont3} &&
 
-    ${MAGICK_COMMAND} convert ${TMP_FOLDER}/Montage_BG_temp1.png ${TMP_FOLDER}/Montage_BG.png -composite -depth 8 ${OUT_FOLDER}/${IMAGE_OUTPUT}
+    ${MAGICK_COMMAND} montage -channel RGBA -background none ${TMP_FOLDER}/${tmpMont2} ${TMP_FOLDER}/${tmpMont3} -tile 2x1 -geometry +0+0 -depth 8 ${TMP_FOLDER}/${tmpMontFin} &&
+
+    ${MAGICK_COMMAND} convert ${TMP_FOLDER}/${tmpMont1} ${TMP_FOLDER}/${tmpMontFin} -composite -depth 8 ${OUT_FOLDER}/${IMAGE_OUTPUT}
 }
 
 # firstRes1="`magick identify -format '%w' ${IMAGE_FIRST}`"
@@ -77,7 +92,7 @@ IMAGE_OUTPUT="comparisonOutput.png"
 TEXT_FIRST="LR"
 TEXT_SECOND="HR"
 TILE_DIM="2x1"
-FONT="Arial-Black"
+FONT="Rubik-Bold"
 TMP_FOLDER=".temp1"
 MAGICK_COMMAND="magick"
 UPSCALE_FACTOR_FIRST_IMAGE="100%"
@@ -165,8 +180,8 @@ mkdir -p ${TMP_FOLDER}
 mkdir -p ${OUT_FOLDER}
 
 # work
-resizeLR
+resizeLR &&
 mont
 
-# clean up
+### clean up
 rm -rf ${TMP_FOLDER}

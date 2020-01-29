@@ -417,7 +417,7 @@ function montage(image, model, message) {
 
     return new Promise((resolve, reject) => {
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results"`,
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
             { silent: true },
             (error, stdout, stderr) => {
                 if (error) {
