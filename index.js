@@ -9,38 +9,41 @@ const fs = require(`fs`);
 const fsExtra = require('fs-extra');
 const sizeOf = require('image-size');
 const isImageUrl = require('is-image-url');
+const FuzzyMatching = require('fuzzy-matching');
 
 // Shell stuff
-const { PythonShell } = require('python-shell');
+const {
+    PythonShell
+} = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
 const queue = new Map();
 
 // Configuration
-const { token, prefix, pixelLimit, esrganPath } = require('./config.json');
+const {
+    token,
+    prefix,
+    pixelLimit,
+    esrganPath
+} = require('./config.json');
 
-// Connects to the bot account and empties the directories
+const models = new FuzzyMatching(
+    fs.readdirSync(`${esrganPath}/models/`)
+    // .forEach((model) => model.replace('.pth', ''))
+);
+
 client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
     emptyDirs();
 });
 
-// Message event handler
-client.on('message', async message => {
-    // The bot will not respond unless the prefix is typed
-    // It will also ignore anything sent by itself
+client.on('message', async (message) => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
-
-    // Splits the args into an array
     const args = message.content.slice(prefix.length).split(' ');
-
-    // Strips the command off of the args array
     const command = args.shift().toLowerCase();
 
-    // Does all the steps required for upscaling the image
     if (command === 'upscale') {
-        // If no args are given the bot will stop and send an error message
         if (!args.length) {
             return message.channel.send(
                 `You didn't provide any arguments, ${message.author}!`
@@ -67,7 +70,9 @@ client.on('message', async message => {
         let image = url.split('/').pop();
 
         // Gets the model name from the model argument
-        let model = args[0].includes('.pth') ? args[0] : args[0] + '.pth';
+        let model = models.get(
+            args[0].includes('.pth') ? args[0] : args[0] + '.pth'
+        ).value;
 
         // Checks to make sure model name is valid (exists and is spelled right)
         if (!fs.readdirSync(esrganPath + '/models/').includes(model)) {
@@ -146,13 +151,14 @@ client.on('message', async message => {
         }
         return message.channel.send(
             '```' +
-                table(models, {
-                    rule: false
-                }) +
-                '```'
+            table(models, {
+                rule: false
+            }) +
+            '```'
         );
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
+        models.add(modelName);
         let url = args[0];
         if (url.includes('drive.google.com')) {
             url = url.replace('/view', '');
@@ -209,7 +215,7 @@ function download(url, destination) {
                 // console.log(`The file is finished downloading.`);
                 resolve();
             })
-            .on('error', error => {
+            .on('error', (error) => {
                 reject(error);
             });
     });
@@ -219,11 +225,11 @@ function download(url, destination) {
 function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
-            filetype =>
-                image
-                    .split('.')
-                    .pop()
-                    .toLowerCase() === filetype.toLowerCase()
+            (filetype) =>
+            image
+            .split('.')
+            .pop()
+            .toLowerCase() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -290,8 +296,7 @@ async function process(job) {
             if (job.montage) {
                 job.message.channel
                     .send(
-                        `${job.message.author}, here is the montage you requested`,
-                        {
+                        `${job.message.author}, here is the montage you requested`, {
                             files: [montageImage]
                         }
                     )
@@ -339,7 +344,7 @@ function upscale(image, model, message) {
                 );
             }
 
-            fs.readdir(`${esrganPath}/results/`, function(err, files) {
+            fs.readdir(`${esrganPath}/results/`, function (err, files) {
                 if (err) {
                     message.channel.send(
                         'Sorry, there was an error processing your image.'
@@ -417,8 +422,9 @@ function montage(image, model, message) {
 
     return new Promise((resolve, reject) => {
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
-            { silent: true },
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`, {
+                silent: true
+            },
             (error, stdout, stderr) => {
                 if (error) {
                     console.log(error);
