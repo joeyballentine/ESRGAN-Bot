@@ -1,8 +1,12 @@
+// TODO:
+// Fix bug where upscaling a montage and montaging it send the results twice
+
 // Discord.js import
 const Discord = require('discord.js');
 const client = new Discord.Client();
 
 const request = require(`request`);
+const { downloadModel, downloadImage } = require('./download.js');
 
 // File stuff
 const fs = require(`fs`);
@@ -12,33 +16,23 @@ const isImageUrl = require('is-image-url');
 const FuzzyMatching = require('fuzzy-matching');
 
 // Shell stuff
-const {
-    PythonShell
-} = require('python-shell');
+const { PythonShell } = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
 const queue = new Map();
 
 // Configuration
-const {
-    token,
-    prefix,
-    pixelLimit,
-    esrganPath
-} = require('./config.json');
+const { token, prefix, pixelLimit, esrganPath } = require('./config.json');
 
-const models = new FuzzyMatching(
-    fs.readdirSync(`${esrganPath}/models/`)
-    // .forEach((model) => model.replace('.pth', ''))
-);
+const models = new FuzzyMatching(fs.readdirSync(`${esrganPath}/models/`));
 
 client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
     emptyDirs();
 });
 
-client.on('message', async (message) => {
+client.on('message', async message => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
     const args = message.content.slice(prefix.length).split(' ');
     const command = args.shift().toLowerCase();
@@ -151,10 +145,10 @@ client.on('message', async (message) => {
         }
         return message.channel.send(
             '```' +
-            table(models, {
-                rule: false
-            }) +
-            '```'
+                table(models, {
+                    rule: false
+                }) +
+                '```'
         );
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
@@ -168,7 +162,7 @@ client.on('message', async (message) => {
                     .pop()}`
             );
         }
-        download(args[0], `${esrganPath}/models/${modelName}`);
+        downloadModel(args[0], `${esrganPath}/models/`, modelName);
     } else if (command === 'help') {
         let help = `
 Commands:
@@ -204,32 +198,15 @@ function emptyDirs() {
     fsExtra.emptyDirSync(esrganPath + '/LR/');
 }
 
-// Downloads from a url to a destination path
-function download(url, destination) {
-    return new Promise((resolve, reject) => {
-        request
-            .get(url)
-            .on('error', console.error)
-            .pipe(fs.createWriteStream(destination))
-            .on('finish', () => {
-                // console.log(`The file is finished downloading.`);
-                resolve();
-            })
-            .on('error', (error) => {
-                reject(error);
-            });
-    });
-}
-
 // Ensures submitted image is png or jpeg
 function checkImage(image) {
     if (
         ['png', 'jpg', 'jpeg'].some(
-            (filetype) =>
-            image
-            .split('.')
-            .pop()
-            .toLowerCase() === filetype.toLowerCase()
+            filetype =>
+                image
+                    .split('.')
+                    .pop()
+                    .toLowerCase() === filetype.toLowerCase()
         )
     ) {
         return true;
@@ -238,7 +215,7 @@ function checkImage(image) {
 
 // Processes an upscale job
 async function process(job) {
-    await download(job.url, esrganPath + '/LR/' + job.image);
+    await downloadImage(job.url, esrganPath + '/LR/');
 
     await convertToPNG(job.image);
     job.image = job.image.split('.')[0] + '.png';
@@ -296,7 +273,8 @@ async function process(job) {
             if (job.montage) {
                 job.message.channel
                     .send(
-                        `${job.message.author}, here is the montage you requested`, {
+                        `${job.message.author}, here is the montage you requested`,
+                        {
                             files: [montageImage]
                         }
                     )
@@ -344,7 +322,7 @@ function upscale(image, model, message) {
                 );
             }
 
-            fs.readdir(`${esrganPath}/results/`, function (err, files) {
+            fs.readdir(`${esrganPath}/results/`, function(err, files) {
                 if (err) {
                     message.channel.send(
                         'Sorry, there was an error processing your image.'
@@ -422,7 +400,8 @@ function montage(image, model, message) {
 
     return new Promise((resolve, reject) => {
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`, {
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
+            {
                 silent: true
             },
             (error, stdout, stderr) => {
