@@ -7,6 +7,7 @@ const client = new Discord.Client();
 
 const request = require(`request`);
 const { downloadModel, downloadImage } = require('./download.js');
+const { downscale, convertToPNG, split, merge } = require('./imageUtils.js');
 
 // File stuff
 const fs = require(`fs`);
@@ -57,8 +58,8 @@ client.on('message', async message => {
         }
 
         // Sanitizing the url
-        url = url.split('&')[0];
-        url = url.split('?')[0];
+        // url = url.split('&')[0];
+        // url = url.split('?')[0];
 
         // Downloads the image
         let image = url.split('/').pop();
@@ -102,38 +103,33 @@ client.on('message', async message => {
             upscaleJob.montage = true;
         }
 
-        // Checks if the image is valid to be upscaled
-        if (checkImage(image)) {
-            // Adds to the queue and starts upscaling if not already started.
-            if (!queue.get(0)) {
-                const queueConstruct = {
-                    textChannel: message.channel,
-                    jobs: []
-                };
-                queue.set(0, queueConstruct);
-                queue.get(0).jobs.push(upscaleJob);
+        // Adds to the queue and starts upscaling if not already started.
+        if (!queue.get(0)) {
+            const queueConstruct = {
+                textChannel: message.channel,
+                jobs: []
+            };
+            queue.set(0, queueConstruct);
+            queue.get(0).jobs.push(upscaleJob);
 
-                try {
-                    message.channel.send(`Your image is being processed.`);
-                    await process(queue.get(0).jobs[0]);
-                } catch (err) {
-                    // If something goes wrong here we just reset the entire queue
-                    // This probably isn't ideal but it's what the music bots do
-                    console.log(err);
-                    queue.delete(0);
-                    return message.channel.send(err);
-                }
-            } else {
-                queue.get(0).jobs.push(upscaleJob);
-                return message.channel.send(
-                    `${image} has been added to the queue! Your image is #${
-                        queue.get(0).jobs.length
-                    } in line for processing.`
+            try {
+                message.channel.send(
+                    `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
                 );
+                await process(queue.get(0).jobs[0]);
+            } catch (err) {
+                // If something goes wrong here we just reset the entire queue
+                // This probably isn't ideal but it's what the music bots do
+                console.log(err);
+                queue.delete(0);
+                return message.channel.send(err);
             }
         } else {
+            queue.get(0).jobs.push(upscaleJob);
             return message.channel.send(
-                `Sorry, that image cannot be processed.`
+                `${image} has been added to the queue! Your image is #${
+                    queue.get(0).jobs.length
+                } in line for processing.`
             );
         }
     } else if (command === 'models') {
@@ -198,30 +194,35 @@ function emptyDirs() {
     fsExtra.emptyDirSync(esrganPath + '/LR/');
 }
 
-// Ensures submitted image is png or jpeg
-function checkImage(image) {
-    if (
-        ['png', 'jpg', 'jpeg'].some(
-            filetype =>
-                image
-                    .split('.')
-                    .pop()
-                    .toLowerCase() === filetype.toLowerCase()
-        )
-    ) {
-        return true;
-    } else return false;
-}
-
 // Processes an upscale job
 async function process(job) {
-    await downloadImage(job.url, esrganPath + '/LR/');
+    const parsePath = require('parse-filepath');
 
-    await convertToPNG(job.image);
-    job.image = job.image.split('.')[0] + '.png';
+    let image = parsePath(await downloadImage(job.url, esrganPath + '/LR/'));
+    console.log(image);
+
+    if (!['.png', '.jpg', '.jpeg'].includes(image.ext.toLowerCase())) {
+        return job.message.channel
+            .send(
+                `Sorry, ${job.message.author}, that image cannot be processed.`
+            )
+            .then(() => {
+                processNext();
+            });
+    }
+
+    if (image.ext.toLowerCase() !== '.png') {
+        await convertToPNG(image.path).catch(error => {
+            console.log(error);
+            return job.message.reply(
+                'Sorry, there was an error processing your image. [c]'
+            );
+        });
+        image = parsePath(image.dir + '/' + image.name + '.png');
+    }
 
     // Checks image to see if it should split
-    let dimensions = sizeOf(esrganPath + '/LR/' + job.image);
+    let dimensions = sizeOf(image.path);
     if (job.downscale) {
         dimensions.width /= job.downscale;
         dimensions.height /= job.downscale;
@@ -231,23 +232,70 @@ async function process(job) {
     }
 
     // Downscales the image if argument provided
-    if (job.downscale) await downscale(job.image, job.downscale, job.filter);
+    if (job.downscale) {
+        console.log('Downscaling...');
+        await downscale(image.path, job.downscale, job.filter).catch(error => {
+            console.log(error);
+            return job.message.reply(
+                'Sorry, there was an error processing your image. [d]'
+            );
+        });
+    }
 
     // Splits if needed
-    if (job.split) await split();
+    if (job.split) {
+        console.log('Splitting...');
+        await split(image.path).catch(error => {
+            console.log(error);
+            return job.message.reply(
+                'Sorry, there was an error processing your image. [s]'
+            );
+        });
+    }
 
     // Upscales the image(s)
-    await upscale(job.image, job.model, job.message);
+    console.log('Upscaling...');
+    await upscale(job.model, job.message).catch(error => {
+        console.log(error);
+        return job.message.reply(
+            'Sorry, there was an error processing your image. [u]'
+        );
+    });
 
     // Merges the images if split was needed
-    if (job.split) await merge(job.image);
+    if (job.split) {
+        console.log('Merging...');
+        await merge(
+            `${esrganPath}/results/`,
+            image.name,
+            `${esrganPath}/LR/`
+        ).catch(error => {
+            console.log(error);
+            return job.message.reply(
+                'Sorry, there was an error processing your image. [me]'
+            );
+        });
+    }
 
     // Montages the LR and result if argument provided
-    if (job.montage && !job.split)
-        await montage(job.image, job.model, job.message);
+    if (job.montage && !job.split) {
+        console.log('Montaging...');
+        await montage(image, job.model, job.message).catch(error => {
+            console.log(error);
+            return job.message.reply(
+                'Sorry, there was an error processing your image. [mo]'
+            );
+        });
+    }
 
     // Optimizes the images
-    await optimize(`${esrganPath}/results/`);
+    console.log('Optimizing...');
+    await optimize(`${esrganPath}/results/`).catch(error => {
+        console.log(error);
+        return job.message.reply(
+            'Sorry, there was an error processing your image. [o]'
+        );
+    });
 
     // Adds all files in results to an array which it will use to send attachments
     let fileNames = fs.readdirSync(`${esrganPath}/results/`);
@@ -262,6 +310,7 @@ async function process(job) {
         }
     }
 
+    console.log('Sending...');
     job.message
         .reply(`Upscaled using ${job.model}`, {
             // files: [
@@ -304,7 +353,7 @@ function processNext() {
 }
 
 // Runs ESRGAN
-function upscale(image, model, message) {
+function upscale(model, message) {
     return new Promise((resolve, reject) => {
         let args = {
             args: [
@@ -343,56 +392,10 @@ function upscale(image, model, message) {
     });
 }
 
-function convertToPNG(image) {
-    let newImage = image.split('.')[0] + '.png';
-    return new Promise((resolve, reject) => {
-        if (image.split('.')[1].toLowerCase === 'png') {
-            resolve();
-        } else {
-            shell.mkdir(`${esrganPath}/LR/_TMP`);
-            shell.exec(
-                `magick convert ${esrganPath}/LR/${image} -format png ${esrganPath}/LR/_TMP/${newImage}`,
-                (error, stdout, stderr) => {
-                    if (error) {
-                        console.log(error);
-                        reject();
-                    }
-                    shell.rm('-f', `${esrganPath}/LR/${image}`);
-                    shell.mv(
-                        '-f',
-                        `${esrganPath}/LR/_TMP/${newImage}`,
-                        `${esrganPath}/LR/${newImage}`
-                    );
-                    shell.rm('-r', `${esrganPath}/LR/_TMP`);
-                    resolve(stdout ? stdout : stderr);
-                }
-            );
-        }
-    });
-}
-
-// Downscales using ImageMagick
-function downscale(image, amount, filter) {
-    return new Promise((resolve, reject) => {
-        shell.exec(
-            `magick mogrify -resize ${(1.0 / amount) * 100.0 +
-                '%'} -filter ${filter} -format png ${esrganPath}/LR/${image}`,
-            (error, stdout, stderr) => {
-                if (error) {
-                    console.log(error);
-                    reject();
-                }
-                resolve(stdout ? stdout : stderr);
-            }
-        );
-    });
-}
-
 // Creates a side-by-side montage
-function montage(image, model, message) {
-    let lr = `${esrganPath}LR/${image}`;
-    let imageName = image.split('.')[0];
-    let result = `${esrganPath}results/${imageName}_rlt.png`;
+function montage(image, model) {
+    let lr = image.path;
+    let result = `${esrganPath}results/${image.name}_rlt.png`;
     let modelName = model.replace('.pth', '');
 
     let path = require('path');
@@ -400,56 +403,16 @@ function montage(image, model, message) {
 
     return new Promise((resolve, reject) => {
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${imageName}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${image.name}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
             {
                 silent: true
             },
             (error, stdout, stderr) => {
                 if (error) {
-                    console.log(error);
-                    message.channel.send(
-                        'There was an error making your montage.'
-                    );
-                    reject();
+                    reject(error);
                 } else {
                     resolve(stdout ? stdout : stderr);
                 }
-            }
-        );
-    });
-}
-
-// Splits the LR images into tiles
-function split() {
-    let path = require('path');
-    let absolutePath = path.resolve('./scripts/split.sh');
-
-    return new Promise((resolve, reject) => {
-        shell.exec(
-            `${absolutePath} ${esrganPath}/LR`,
-            (error, stdout, stderr) => {
-                if (error) {
-                    console.log(error);
-                    reject();
-                }
-                resolve();
-            }
-        );
-    });
-}
-
-// Merges resulting tiles
-function merge(image) {
-    let path = require('path');
-    let absolutePath = path.resolve('./scripts/merge.sh');
-
-    let imageName = image.split('.')[0];
-    return new Promise((resolve, reject) => {
-        shell.exec(
-            `${absolutePath} ${esrganPath}/LR ${esrganPath}/results ${imageName}`,
-            (error, stdout, stderr) => {
-                if (error) console.log(error);
-                resolve();
             }
         );
     });
