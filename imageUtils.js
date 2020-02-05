@@ -72,16 +72,14 @@ exports.merge = async (resultDir, imageName, lrDir) => {
         console.log(resultSize);
         break;
     }
-    let overlap =
-        8 *
-        Math.sqrt(
-            (resultSize.width * resultSize.height) /
-                (lrSize.width * lrSize.height)
-        );
+    let scale = Math.sqrt(
+        (resultSize.width * resultSize.height) / (lrSize.width * lrSize.height)
+    );
+    let overlap = 8 * scale;
     return new Promise((resolve, reject) => {
         imagemagickCli
             .exec(
-                `magick mogrify -alpha set -virtual-pixel transparent -channel A -blur 0x4 -level 50%,100% +channel ${resultDir}/*.png`
+                `magick mogrify -alpha set -virtual-pixel transparent -channel A -blur 0x${scale} -level 50%,100% +channel ${resultDir}/*.png`
             )
             .then(() => {
                 imagemagickCli
