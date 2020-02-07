@@ -33,6 +33,8 @@ client.on('ready', () => {
     emptyDirs();
 });
 
+client.on('error', console.error);
+
 client.on('message', async message => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
     const args = message.content.slice(prefix.length).split(' ');
