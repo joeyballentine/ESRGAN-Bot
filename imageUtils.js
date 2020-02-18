@@ -53,6 +53,9 @@ exports.convertToPNG = async imagePath => {
                     }
                     resolve(stdout ? stdout : stderr);
                 });
+            }).catch((error) => {
+                if (error) console.log(error);
+                reject();
             });
         }
     });
