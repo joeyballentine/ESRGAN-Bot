@@ -129,23 +129,29 @@ client.on('message', async (message) => {
             queue.set(0, queueConstruct);
             queue.get(0).jobs.push(upscaleJob);
 
-            try {
-                message.channel.send(
-                    `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
-                );
-                await process(queue.get(0).jobs[0]);
-            } catch (err) {
-                // If something goes wrong here we just reset the entire queue
-                // This probably isn't ideal but it's what the music bots do
-                console.log(err);
-                queue.delete(0);
-                return message.channel.send(err);
-            }
+            message.channel.send(
+                `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
+            );
+            process(queue.get(0).jobs[0])
+                .then(async (messages) => {
+                    for (let msg of messages) {
+                        await message.reply(msg.message, {
+                            files: msg.files
+                        });
+                    }
+                    console.log('Finished processing.');
+                    processNext();
+                })
+                .catch((error) => {
+                    console.log(error);
+                    message.reply(error);
+                    processNext();
+                });
         } else {
             queue.get(0).jobs.push(upscaleJob);
             return message.channel.send(
                 `${image} has been added to the queue! Your image is #${
-                    queue.get(0).jobs.length
+                    queue.get(0).jobs.length - 1
                 } in line for processing.`
             );
         }
@@ -218,29 +224,28 @@ function emptyDirs() {
 async function process(job) {
     const parsePath = require('parse-filepath');
 
-    let image = parsePath(await downloadImage(job.url, esrganPath + '/LR/'));
-    console.log(image);
+    let image = parsePath(await downloadImage(job.url, esrganPath + '/LR/').catch((error) => {
+        console.log(error);
+        throw (`Sorry, your image failed to download.`);
+    }).catch((error) => {
+        console.log(error);
+        throw ('Sorry, there was an error processing your image. [p]')
+    }));
 
     if (!['.png', '.jpg', '.jpeg'].includes(image.ext.toLowerCase())) {
-        return job.message.channel
-            .send(
-                `Sorry, ${job.message.author}, that image cannot be processed.`
-            )
-            .then(() => {
-                processNext();
-            });
+        throw (`Sorry, that image cannot be processed.`);
     }
 
     if (image.ext.toLowerCase() !== '.png') {
         await convertToPNG(image.path).catch((error) => {
             console.log(error);
-            return job.message.reply(
-                'Sorry, there was an error processing your image. [c]'
-            ).then(() => {
-                processNext();
+            throw ('Sorry, there was an error processing your image. [c]')
+        }).then(() => {
+            image = parsePath(image.dir + '/' + image.name + '.png').catch((error) => {
+                console.log(error);
+                throw ('Sorry, there was an error processing your image. [p2]')
             });
         });
-        image = parsePath(image.dir + '/' + image.name + '.png');
     }
 
     // Checks image to see if it should split
@@ -259,11 +264,7 @@ async function process(job) {
         await downscale(image.path, job.downscale, job.filter).catch(
             (error) => {
                 console.log(error);
-                return job.message.reply(
-                    'Sorry, there was an error processing your image. [d]'
-                ).then(() => {
-                    processNext();
-                });
+                throw ('Sorry, there was an error processing your image. [d]');
             }
         );
     }
@@ -273,11 +274,7 @@ async function process(job) {
         console.log('Splitting...');
         await split(image.path).catch((error) => {
             console.log(error);
-            return job.message.reply(
-                'Sorry, there was an error processing your image. [s]'
-            ).then(() => {
-                processNext();
-            });
+            throw ('Sorry, there was an error processing your image. [s]');
         });
     }
 
@@ -285,11 +282,7 @@ async function process(job) {
     console.log('Upscaling...');
     await upscale(job.model).catch((error) => {
         console.log(error);
-        return job.message.reply(
-            'Sorry, there was an error processing your image. [u]'
-        ).then(() => {
-            processNext();
-        });
+        throw ('Sorry, there was an error processing your image. [u]');
     });
 
     // Merges the images if split was needed
@@ -301,11 +294,7 @@ async function process(job) {
             `${esrganPath}/LR/`
         ).catch((error) => {
             console.log(error);
-            return job.message.reply(
-                'Sorry, there was an error processing your image. [me]'
-            ).then(() => {
-                processNext();
-            });
+            throw ('Sorry, there was an error processing your image. [me]');
         });
     }
 
@@ -314,11 +303,7 @@ async function process(job) {
         console.log('Montaging...');
         await montage(image, job.model, job.message).catch((error) => {
             console.log(error);
-            return job.message.reply(
-                'Sorry, there was an error processing your image. [mo]'
-            ).then(() => {
-                processNext();
-            });
+            throw ('Sorry, there was an error processing your image. [mo]');
         });
     }
 
@@ -326,11 +311,7 @@ async function process(job) {
     console.log('Optimizing...');
     await optimize(`${esrganPath}/results/`).catch((error) => {
         console.log(error);
-        return job.message.reply(
-            'Sorry, there was an error processing your image. [o]'
-        ).then(() => {
-            processNext();
-        });
+        throw ('Sorry, there was an error processing your image. [o]');
     });
 
     // Adds all files in results to an array which it will use to send attachments
@@ -345,31 +326,22 @@ async function process(job) {
             montageImage = `${esrganPath}/results/${file}`;
         }
     }
-
+    if (!resultImage) {
+        throw ('Sorry, there was an error processing your image. [s]');
+    }
+    let messages = [];
     console.log('Sending...');
-    job.message
-        .reply(`Upscaled using ${job.model}`, {
-            // files: [
-            //     `${esrganPath}/results/${job.image.split('.')[0]}_rlt.${format}`
-            // ]
-            files: [resultImage]
-        })
-        .then(() => {
-            if (job.montage) {
-                job.message.channel
-                    .send(
-                        `${job.message.author}, here is the montage you requested`, {
-                            files: [montageImage]
-                        }
-                    )
-                    .then(() => {
-                        processNext();
-                    });
-            } else {
-                processNext();
-            }
-        })
-        .catch(console.error);
+    messages.push({
+        message: `Upscaled using ${job.model}`,
+        files: [resultImage]
+    });
+    if (job.montage) {
+        messages.push({
+            message: `Here is the montage you requested`,
+            files: [montageImage]
+        });
+    }
+    return (messages);
 }
 
 function processNext() {

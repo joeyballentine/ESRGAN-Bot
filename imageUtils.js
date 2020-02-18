@@ -4,6 +4,7 @@ const sizeOf = require('image-size');
 const path = require('path');
 
 exports.downscale = async (imagePath, amount, filter) => {
+    console.log(imagePath);
     return new Promise((resolve, reject) => {
         imagemagickCli
             .exec(
@@ -19,6 +20,10 @@ exports.downscale = async (imagePath, amount, filter) => {
                     reject();
                 }
                 resolve(stdout ? stdout : stderr);
+            })
+            .catch((error) => {
+                if (error) console.log(error);
+                reject();
             });
     });
 };
