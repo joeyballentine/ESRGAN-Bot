@@ -6,8 +6,16 @@ const Discord = require('discord.js');
 const client = new Discord.Client();
 
 const request = require(`request`);
-const { downloadModel, downloadImage } = require('./download.js');
-const { downscale, convertToPNG, split, merge } = require('./imageUtils.js');
+const {
+    downloadModel,
+    downloadImage
+} = require('./download.js');
+const {
+    downscale,
+    convertToPNG,
+    split,
+    merge
+} = require('./imageUtils.js');
 
 // File stuff
 const fs = require(`fs`);
@@ -17,14 +25,21 @@ const isImageUrl = require('is-image-url');
 const FuzzyMatching = require('fuzzy-matching');
 
 // Shell stuff
-const { PythonShell } = require('python-shell');
+const {
+    PythonShell
+} = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
 const queue = new Map();
 
 // Configuration
-const { token, prefix, pixelLimit, esrganPath } = require('./config.json');
+const {
+    token,
+    prefix,
+    pixelLimit,
+    esrganPath
+} = require('./config.json');
 
 const models = new FuzzyMatching(fs.readdirSync(`${esrganPath}/models/`));
 
@@ -35,7 +50,7 @@ client.on('ready', () => {
 
 client.on('error', console.error);
 
-client.on('message', async message => {
+client.on('message', async (message) => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
     const args = message.content.slice(prefix.length).split(' ');
     const command = args.shift().toLowerCase();
@@ -143,10 +158,10 @@ client.on('message', async message => {
         }
         return message.channel.send(
             '```' +
-                table(models, {
-                    rule: false
-                }) +
-                '```'
+            table(models, {
+                rule: false
+            }) +
+            '```'
         );
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
@@ -160,7 +175,10 @@ client.on('message', async message => {
                     .pop()}`
             );
         }
-        downloadModel(args[0], `${esrganPath}/models/`, modelName);
+        message.channel.send('Adding model...');
+        downloadModel(args[0], `${esrganPath}/models/`, modelName).then(() => {
+            return message.channel.send(`Model ${modelName} successfully added.`);
+        });
     } else if (command === 'help') {
         let help = `
 Commands:
@@ -214,11 +232,13 @@ async function process(job) {
     }
 
     if (image.ext.toLowerCase() !== '.png') {
-        await convertToPNG(image.path).catch(error => {
+        await convertToPNG(image.path).catch((error) => {
             console.log(error);
             return job.message.reply(
                 'Sorry, there was an error processing your image. [c]'
-            );
+            ).then(() => {
+                processNext();
+            });
         });
         image = parsePath(image.dir + '/' + image.name + '.png');
     }
@@ -236,32 +256,40 @@ async function process(job) {
     // Downscales the image if argument provided
     if (job.downscale) {
         console.log('Downscaling...');
-        await downscale(image.path, job.downscale, job.filter).catch(error => {
-            console.log(error);
-            return job.message.reply(
-                'Sorry, there was an error processing your image. [d]'
-            );
-        });
+        await downscale(image.path, job.downscale, job.filter).catch(
+            (error) => {
+                console.log(error);
+                return job.message.reply(
+                    'Sorry, there was an error processing your image. [d]'
+                ).then(() => {
+                    processNext();
+                });
+            }
+        );
     }
 
     // Splits if needed
     if (job.split) {
         console.log('Splitting...');
-        await split(image.path).catch(error => {
+        await split(image.path).catch((error) => {
             console.log(error);
             return job.message.reply(
                 'Sorry, there was an error processing your image. [s]'
-            );
+            ).then(() => {
+                processNext();
+            });
         });
     }
 
     // Upscales the image(s)
     console.log('Upscaling...');
-    await upscale(job.model, job.message).catch(error => {
+    await upscale(job.model).catch((error) => {
         console.log(error);
         return job.message.reply(
             'Sorry, there was an error processing your image. [u]'
-        );
+        ).then(() => {
+            processNext();
+        });
     });
 
     // Merges the images if split was needed
@@ -271,32 +299,38 @@ async function process(job) {
             `${esrganPath}/results/`,
             image.name,
             `${esrganPath}/LR/`
-        ).catch(error => {
+        ).catch((error) => {
             console.log(error);
             return job.message.reply(
                 'Sorry, there was an error processing your image. [me]'
-            );
+            ).then(() => {
+                processNext();
+            });
         });
     }
 
     // Montages the LR and result if argument provided
     if (job.montage && !job.split) {
         console.log('Montaging...');
-        await montage(image, job.model, job.message).catch(error => {
+        await montage(image, job.model, job.message).catch((error) => {
             console.log(error);
             return job.message.reply(
                 'Sorry, there was an error processing your image. [mo]'
-            );
+            ).then(() => {
+                processNext();
+            });
         });
     }
 
     // Optimizes the images
     console.log('Optimizing...');
-    await optimize(`${esrganPath}/results/`).catch(error => {
+    await optimize(`${esrganPath}/results/`).catch((error) => {
         console.log(error);
         return job.message.reply(
             'Sorry, there was an error processing your image. [o]'
-        );
+        ).then(() => {
+            processNext();
+        });
     });
 
     // Adds all files in results to an array which it will use to send attachments
@@ -324,8 +358,7 @@ async function process(job) {
             if (job.montage) {
                 job.message.channel
                     .send(
-                        `${job.message.author}, here is the montage you requested`,
-                        {
+                        `${job.message.author}, here is the montage you requested`, {
                             files: [montageImage]
                         }
                     )
@@ -355,7 +388,7 @@ function processNext() {
 }
 
 // Runs ESRGAN
-function upscale(model, message) {
+function upscale(model) {
     return new Promise((resolve, reject) => {
         let args = {
             args: [
@@ -366,25 +399,26 @@ function upscale(model, message) {
         };
         PythonShell.run(esrganPath + '/test.py', args, (err, results) => {
             if (err) {
-                console.log(err);
-                queue.delete(0);
-                return message.channel.send(
-                    'Sorry, there was an error processing your image.'
-                );
+                // console.log(err);
+                // queue.delete(0);
+                // return message.channel.send(
+                //     'Sorry, there was an error processing your image.'
+                // );
+                reject(err)
             }
 
-            fs.readdir(`${esrganPath}/results/`, function(err, files) {
+            fs.readdir(`${esrganPath}/results/`, function (err, files) {
                 if (err) {
-                    message.channel.send(
-                        'Sorry, there was an error processing your image.'
-                    );
-                    reject();
+                    // message.channel.send(
+                    //     'Sorry, there was an error processing your image.'
+                    // );
+                    reject(err);
                 } else {
                     if (!files.length) {
-                        message.channel.send(
-                            'Sorry, there was an error processing your image.'
-                        );
-                        reject();
+                        // message.channel.send(
+                        //     'Sorry, there was an error processing your image.'
+                        // );
+                        reject(err);
                     } else {
                         resolve();
                     }
@@ -405,8 +439,7 @@ function montage(image, model) {
 
     return new Promise((resolve, reject) => {
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${image.name}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
-            {
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${image.name}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`, {
                 silent: true
             },
             (error, stdout, stderr) => {

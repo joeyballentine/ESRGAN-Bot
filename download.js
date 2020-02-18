@@ -1,10 +1,15 @@
-const { DownloaderHelper } = require('node-downloader-helper');
+const {
+    DownloaderHelper
+} = require('node-downloader-helper');
 
 exports.downloadModel = async (url, destination, filename) => {
     return new Promise((resolve, reject) => {
         const dl = new DownloaderHelper(url, destination, {
             fileName: filename,
-            retry: { maxRetries: 2, delay: 10 },
+            retry: {
+                maxRetries: 2,
+                delay: 10
+            },
             override: true
         });
 

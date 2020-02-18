@@ -10,7 +10,10 @@ exports.downscale = async (imagePath, amount, filter) => {
                 `mogrify -resize ${(1.0 / amount) * 100.0 +
                     '%'} -filter ${filter} -format png ${imagePath}`
             )
-            .then(({ stdout, stderr }) => {
+            .then(({
+                stdout,
+                stderr
+            }) => {
                 if (stderr) {
                     console.log(stderr);
                     reject();
@@ -24,19 +27,26 @@ exports.convertToPNG = async imagePath => {
     return new Promise((resolve, reject) => {
         if (
             imagePath
-                .split('.')
-                .pop()
-                .toLowerCase() === 'png'
+            .split('.')
+            .pop()
+            .toLowerCase() === 'png'
         ) {
             resolve(imagePath);
         } else {
-            imagemagickCli.exec(`mogrify -format png ${imagePath}`).then(() => {
+            imagemagickCli.exec(`mogrify -format png ${imagePath}`).then(({
+                stdout,
+                stderr
+            }) => {
+                if (stderr) {
+                    console.log(stderr);
+                    reject();
+                }
                 fs.unlink(imagePath, err => {
                     if (err) {
                         console.error(err);
                         reject();
                     }
-                    resolve();
+                    resolve(stdout ? stdout : stderr);
                 });
             });
         }
@@ -47,13 +57,27 @@ exports.split = async imagePath => {
     return new Promise((resolve, reject) => {
         imagemagickCli
             .exec(`magick mogrify -bordercolor Black -border 8x8 ${imagePath}`)
-            .then(() => {
+            .then(({
+                stdout,
+                stderr
+            }) => {
+                if (stderr) {
+                    console.log(stderr);
+                    reject();
+                }
                 imagemagickCli
                     .exec(
                         `magick mogrify -crop 3x3+16+16@ +repage ${imagePath}`
                     )
-                    .then(() => {
-                        resolve();
+                    .then(({
+                        stdout,
+                        stderr
+                    }) => {
+                        if (stderr) {
+                            console.log(stderr);
+                            reject();
+                        }
+                        resolve(stdout ? stdout : stderr);
                     });
             });
     });
@@ -81,12 +105,26 @@ exports.merge = async (resultDir, imageName, lrDir) => {
             .exec(
                 `magick mogrify -alpha set -virtual-pixel transparent -channel A -blur 0x${scale} -level 50%,100% +channel ${resultDir}/*.png`
             )
-            .then(() => {
+            .then(({
+                stdout,
+                stderr
+            }) => {
+                if (stderr) {
+                    console.log(stderr);
+                    reject();
+                }
                 imagemagickCli
                     .exec(
                         `magick montage ${resultDir}/*.png -geometry -${overlap}-${overlap} -background black -depth 8 -define png:color-type=2 ${resultDir}/${imageName}_rlt.png`
                     )
-                    .then(() => {
+                    .then(({
+                        stdout,
+                        stderr
+                    }) => {
+                        if (stderr) {
+                            console.log(stderr);
+                            reject();
+                        }
                         fs.readdir(resultDir, (err, files) => {
                             if (err) {
                                 console.log(err);
@@ -98,7 +136,7 @@ exports.merge = async (resultDir, imageName, lrDir) => {
                                 }
                             }
 
-                            resolve();
+                            resolve(stdout ? stdout : stderr);
                         });
                     });
             });
