@@ -149,13 +149,15 @@ client.on('message', async message => {
         for (let i = 0; i < files.length; i = i + 4) {
             models.push(files.slice(i, i + 4));
         }
-        return message.channel.send(
-            '```' +
-                table(models, {
-                    rule: false
-                }) +
-                '```'
-        );
+        while (models.length > 0) {
+            message.channel.send(
+                '```' +
+                    table(models.splice(0, 16), {
+                        rule: false
+                    }) +
+                    '```'
+            );
+        }
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
         models.add(modelName);
