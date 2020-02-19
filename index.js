@@ -37,7 +37,7 @@ client.on('ready', () => {
 
 client.on('error', console.error);
 
-client.on('message', async (message) => {
+client.on('message', async message => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
     const args = message.content.slice(prefix.length).split(' ');
     const command = args.shift().toLowerCase();
@@ -120,7 +120,7 @@ client.on('message', async (message) => {
                 `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
             );
             process(queue.get(0).jobs[0])
-                .then(async (messages) => {
+                .then(async messages => {
                     for (let msg of messages) {
                         await message.reply(msg.message, {
                             files: msg.files
@@ -129,7 +129,7 @@ client.on('message', async (message) => {
                     console.log('Finished processing.');
                     processNext();
                 })
-                .catch((error) => {
+                .catch(error => {
                     console.log(error);
                     message.reply(error);
                     processNext();
@@ -213,7 +213,7 @@ function emptyDirs() {
 async function process(job) {
     // Downloads the image
     let downloaded = await downloadImage(job.url, esrganPath + '/LR/').catch(
-        (error) => {
+        error => {
             console.log(error);
             throw `Sorry, your image failed to download.`;
         }
@@ -230,7 +230,7 @@ async function process(job) {
     // Converts image to png if it isn't
     if (image.ext.toLowerCase() !== '.png') {
         await convertToPNG(image.path)
-            .catch((error) => {
+            .catch(error => {
                 console.log(error);
                 throw 'Sorry, there was an error processing your image. [c]';
             })
@@ -252,19 +252,16 @@ async function process(job) {
     // Downscales the image if argument provided
     if (job.downscale) {
         console.log('Downscaling...');
-        console.log(image.path);
-        await downscale(image.path, job.downscale, job.filter).catch(
-            (error) => {
-                console.log(error);
-                throw 'Sorry, there was an error processing your image. [d]';
-            }
-        );
+        await downscale(image.path, job.downscale, job.filter).catch(error => {
+            console.log(error);
+            throw 'Sorry, there was an error processing your image. [d]';
+        });
     }
 
     // Splits if needed
     if (job.split) {
         console.log('Splitting...');
-        await split(image.path).catch((error) => {
+        await split(image.path).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [s]';
         });
@@ -272,7 +269,7 @@ async function process(job) {
 
     // Upscales the image(s)
     console.log('Upscaling...');
-    await upscale(job.model).catch((error) => {
+    await upscale(job.model).catch(error => {
         console.log(error);
         throw 'Sorry, there was an error processing your image. [u]';
     });
@@ -284,7 +281,7 @@ async function process(job) {
             `${esrganPath}/results/`,
             image.name,
             `${esrganPath}/LR/`
-        ).catch((error) => {
+        ).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [me]';
         });
@@ -293,7 +290,7 @@ async function process(job) {
     // Montages the LR and result if argument provided
     if (job.montage && !job.split) {
         console.log('Montaging...');
-        await montage(image, job.model, job.message).catch((error) => {
+        await montage(image, job.model, job.message).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [mo]';
         });
@@ -301,7 +298,7 @@ async function process(job) {
 
     // Optimizes the images
     console.log('Optimizing...');
-    await optimize(`${esrganPath}/results/`).catch((error) => {
+    await optimize(`${esrganPath}/results/`).catch(error => {
         console.log(error);
         throw 'Sorry, there was an error processing your image. [o]';
     });
