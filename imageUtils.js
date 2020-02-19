@@ -1,74 +1,65 @@
 const imagemagickCli = require('imagemagick-cli');
 const fs = require(`fs`);
 const sizeOf = require('image-size');
-const path = require('path');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
 
 exports.downscale = async (imagePath, amount, filter) => {
-    console.log(imagePath);
+    let size = (1.0 / amount) * 100.0 + '%';
     return new Promise((resolve, reject) => {
-        imagemagickCli
-            .exec(
-                `mogrify -resize ${(1.0 / amount) * 100.0 +
-                    '%'} -filter ${filter} -format png ${imagePath}`
-            )
-            .then(({
-                stdout,
-                stderr
-            }) => {
+        exec(
+            `magick mogrify -resize ${size} -filter ${filter} -format png ${imagePath.replace(
+                '\\',
+                '/'
+            )}`
+        )
+            .then((stdout, stderr) => {
                 if (stderr) {
-                    console.log(stderr);
+                    console.error(`error: ${stderr}`);
                     reject();
+                } else {
+                    resolve();
                 }
-                resolve(stdout ? stdout : stderr);
             })
-            .catch((error) => {
-                if (error) console.log(error);
-                reject();
-            });
+            .catch(reject());
     });
 };
 
-exports.convertToPNG = async imagePath => {
+exports.convertToPNG = async (imagePath) => {
     return new Promise((resolve, reject) => {
         if (
             imagePath
-            .split('.')
-            .pop()
-            .toLowerCase() === 'png'
+                .split('.')
+                .pop()
+                .toLowerCase() === 'png'
         ) {
             resolve(imagePath);
         } else {
-            imagemagickCli.exec(`mogrify -format png ${imagePath}`).then(({
-                stdout,
-                stderr
-            }) => {
-                if (stderr) {
-                    console.log(stderr);
-                    reject();
-                }
-                fs.unlink(imagePath, err => {
-                    if (err) {
-                        console.error(err);
+            exec(`magick mogrify -format png ${imagePath}`)
+                .then((stdout, stderr) => {
+                    if (stderr) {
+                        console.error(`error: ${stderr}`);
                         reject();
+                    } else {
+                        fs.unlink(imagePath, (err) => {
+                            if (err) {
+                                console.error(err);
+                                reject();
+                            }
+                            resolve(stdout ? stdout : stderr);
+                        });
                     }
-                    resolve(stdout ? stdout : stderr);
-                });
-            }).catch((error) => {
-                if (error) console.log(error);
-                reject();
-            });
+                })
+                .catch(reject());
         }
     });
 };
 
-exports.split = async imagePath => {
+exports.split = async (imagePath) => {
     return new Promise((resolve, reject) => {
         imagemagickCli
             .exec(`magick mogrify -bordercolor Black -border 8x8 ${imagePath}`)
-            .then(({
-                stdout,
-                stderr
-            }) => {
+            .then(({ stdout, stderr }) => {
                 if (stderr) {
                     console.log(stderr);
                     reject();
@@ -77,10 +68,7 @@ exports.split = async imagePath => {
                     .exec(
                         `magick mogrify -crop 3x3+16+16@ +repage ${imagePath}`
                     )
-                    .then(({
-                        stdout,
-                        stderr
-                    }) => {
+                    .then(({ stdout, stderr }) => {
                         if (stderr) {
                             console.log(stderr);
                             reject();
@@ -113,10 +101,7 @@ exports.merge = async (resultDir, imageName, lrDir) => {
             .exec(
                 `magick mogrify -alpha set -virtual-pixel transparent -channel A -blur 0x${scale} -level 50%,100% +channel ${resultDir}/*.png`
             )
-            .then(({
-                stdout,
-                stderr
-            }) => {
+            .then(({ stdout, stderr }) => {
                 if (stderr) {
                     console.log(stderr);
                     reject();
@@ -125,10 +110,7 @@ exports.merge = async (resultDir, imageName, lrDir) => {
                     .exec(
                         `magick montage ${resultDir}/*.png -geometry -${overlap}-${overlap} -background black -depth 8 -define png:color-type=2 ${resultDir}/${imageName}_rlt.png`
                     )
-                    .then(({
-                        stdout,
-                        stderr
-                    }) => {
+                    .then(({ stdout, stderr }) => {
                         if (stderr) {
                             console.log(stderr);
                             reject();

@@ -6,16 +6,8 @@ const Discord = require('discord.js');
 const client = new Discord.Client();
 
 const request = require(`request`);
-const {
-    downloadModel,
-    downloadImage
-} = require('./download.js');
-const {
-    downscale,
-    convertToPNG,
-    split,
-    merge
-} = require('./imageUtils.js');
+const { downloadModel, downloadImage } = require('./download.js');
+const { downscale, convertToPNG, split, merge } = require('./imageUtils.js');
 
 // File stuff
 const fs = require(`fs`);
@@ -23,23 +15,18 @@ const fsExtra = require('fs-extra');
 const sizeOf = require('image-size');
 const isImageUrl = require('is-image-url');
 const FuzzyMatching = require('fuzzy-matching');
+const parsePath = require('parse-filepath');
+const path = require('path');
 
 // Shell stuff
-const {
-    PythonShell
-} = require('python-shell');
+const { PythonShell } = require('python-shell');
 const shell = require('shelljs');
 
 // The image upscale queue
 const queue = new Map();
 
 // Configuration
-const {
-    token,
-    prefix,
-    pixelLimit,
-    esrganPath
-} = require('./config.json');
+const { token, prefix, pixelLimit, esrganPath } = require('./config.json');
 
 const models = new FuzzyMatching(fs.readdirSync(`${esrganPath}/models/`));
 
@@ -150,9 +137,9 @@ client.on('message', async (message) => {
         } else {
             queue.get(0).jobs.push(upscaleJob);
             return message.channel.send(
-                `${image} has been added to the queue! Your image is #${
-                    queue.get(0).jobs.length - 1
-                } in line for processing.`
+                `${image} has been added to the queue! Your image is #${queue.get(
+                    0
+                ).jobs.length - 1} in line for processing.`
             );
         }
     } else if (command === 'models') {
@@ -164,10 +151,10 @@ client.on('message', async (message) => {
         }
         return message.channel.send(
             '```' +
-            table(models, {
-                rule: false
-            }) +
-            '```'
+                table(models, {
+                    rule: false
+                }) +
+                '```'
         );
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
@@ -183,7 +170,9 @@ client.on('message', async (message) => {
         }
         message.channel.send('Adding model...');
         downloadModel(args[0], `${esrganPath}/models/`, modelName).then(() => {
-            return message.channel.send(`Model ${modelName} successfully added.`);
+            return message.channel.send(
+                `Model ${modelName} successfully added.`
+            );
         });
     } else if (command === 'help') {
         let help = `
@@ -222,30 +211,32 @@ function emptyDirs() {
 
 // Processes an upscale job
 async function process(job) {
-    const parsePath = require('parse-filepath');
+    // Downloads the image
+    let downloaded = await downloadImage(job.url, esrganPath + '/LR/').catch(
+        (error) => {
+            console.log(error);
+            throw `Sorry, your image failed to download.`;
+        }
+    );
 
-    let image = parsePath(await downloadImage(job.url, esrganPath + '/LR/').catch((error) => {
-        console.log(error);
-        throw (`Sorry, your image failed to download.`);
-    }).catch((error) => {
-        console.log(error);
-        throw ('Sorry, there was an error processing your image. [p]')
-    }));
+    // Parses the filename from the downloaded image
+    let image = parsePath(downloaded);
 
+    // Ensures a valid image type
     if (!['.png', '.jpg', '.jpeg'].includes(image.ext.toLowerCase())) {
-        throw (`Sorry, that image cannot be processed.`);
+        throw `Sorry, that image cannot be processed.`;
     }
 
+    // Converts image to png if it isn't
     if (image.ext.toLowerCase() !== '.png') {
-        await convertToPNG(image.path).catch((error) => {
-            console.log(error);
-            throw ('Sorry, there was an error processing your image. [c]')
-        }).then(() => {
-            image = parsePath(image.dir + '/' + image.name + '.png').catch((error) => {
+        await convertToPNG(image.path)
+            .catch((error) => {
                 console.log(error);
-                throw ('Sorry, there was an error processing your image. [p2]')
+                throw 'Sorry, there was an error processing your image. [c]';
+            })
+            .then(() => {
+                image = parsePath(image.dir + '/' + image.name + '.png');
             });
-        });
     }
 
     // Checks image to see if it should split
@@ -261,10 +252,11 @@ async function process(job) {
     // Downscales the image if argument provided
     if (job.downscale) {
         console.log('Downscaling...');
+        console.log(image.path);
         await downscale(image.path, job.downscale, job.filter).catch(
             (error) => {
                 console.log(error);
-                throw ('Sorry, there was an error processing your image. [d]');
+                throw 'Sorry, there was an error processing your image. [d]';
             }
         );
     }
@@ -274,7 +266,7 @@ async function process(job) {
         console.log('Splitting...');
         await split(image.path).catch((error) => {
             console.log(error);
-            throw ('Sorry, there was an error processing your image. [s]');
+            throw 'Sorry, there was an error processing your image. [s]';
         });
     }
 
@@ -282,7 +274,7 @@ async function process(job) {
     console.log('Upscaling...');
     await upscale(job.model).catch((error) => {
         console.log(error);
-        throw ('Sorry, there was an error processing your image. [u]');
+        throw 'Sorry, there was an error processing your image. [u]';
     });
 
     // Merges the images if split was needed
@@ -294,7 +286,7 @@ async function process(job) {
             `${esrganPath}/LR/`
         ).catch((error) => {
             console.log(error);
-            throw ('Sorry, there was an error processing your image. [me]');
+            throw 'Sorry, there was an error processing your image. [me]';
         });
     }
 
@@ -303,7 +295,7 @@ async function process(job) {
         console.log('Montaging...');
         await montage(image, job.model, job.message).catch((error) => {
             console.log(error);
-            throw ('Sorry, there was an error processing your image. [mo]');
+            throw 'Sorry, there was an error processing your image. [mo]';
         });
     }
 
@@ -311,7 +303,7 @@ async function process(job) {
     console.log('Optimizing...');
     await optimize(`${esrganPath}/results/`).catch((error) => {
         console.log(error);
-        throw ('Sorry, there was an error processing your image. [o]');
+        throw 'Sorry, there was an error processing your image. [o]';
     });
 
     // Adds all files in results to an array which it will use to send attachments
@@ -327,7 +319,7 @@ async function process(job) {
         }
     }
     if (!resultImage) {
-        throw ('Sorry, there was an error processing your image. [s]');
+        throw 'Sorry, there was an error processing your image. [s]';
     }
     let messages = [];
     console.log('Sending...');
@@ -341,7 +333,7 @@ async function process(job) {
             files: [montageImage]
         });
     }
-    return (messages);
+    return messages;
 }
 
 function processNext() {
@@ -376,10 +368,10 @@ function upscale(model) {
                 // return message.channel.send(
                 //     'Sorry, there was an error processing your image.'
                 // );
-                reject(err)
+                reject(err);
             }
 
-            fs.readdir(`${esrganPath}/results/`, function (err, files) {
+            fs.readdir(`${esrganPath}/results/`, function(err, files) {
                 if (err) {
                     // message.channel.send(
                     //     'Sorry, there was an error processing your image.'
@@ -411,7 +403,8 @@ function montage(image, model) {
 
     return new Promise((resolve, reject) => {
         shell.exec(
-            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${image.name}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`, {
+            `${absolutePath} -if="${lr}" -is="${result}" -tf="LR" -ts="${modelName}" -td="2x1" -ug="100%" -io="${image.name}_montage.png" -of="${esrganPath}/results" -f="./scripts/Rubik-Bold.ttf"`,
+            {
                 silent: true
             },
             (error, stdout, stderr) => {
