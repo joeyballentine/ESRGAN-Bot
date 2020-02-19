@@ -116,24 +116,65 @@ client.on('message', async message => {
             queue.set(0, queueConstruct);
             queue.get(0).jobs.push(upscaleJob);
 
-            message.channel.send(
-                `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
-            );
-            process(queue.get(0).jobs[0])
-                .then(async messages => {
-                    for (let msg of messages) {
-                        await message.reply(msg.message, {
-                            files: msg.files
+            // message.channel.send(
+            //     `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
+            // );
+            // let messages = await process(queue.get(0).jobs[0]).catch(error => {
+            //     console.log(error);
+            //     queue.delete(0);
+            //     return message.reply(error);
+            // });
+            // for (let msg of messages) {
+            //     await message
+            //         .reply(msg.message, {
+            //             files: msg.files
+            //         })
+            //         .catch(error => {
+            //             console.log(error);
+            //             queue.delete(0);
+            //             return message.reply(error);
+            //         });
+            // }
+            // console.log('Finished processing.');
+
+            // Process queue until empty
+            while (queue.get(0).jobs.length > 0) {
+                try {
+                    if (queue.get(0).jobs.length > 0) {
+                        message.channel.send(
+                            `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
+                        );
+                        let messages = await process(
+                            queue.get(0).jobs[0]
+                        ).catch(error => {
+                            console.log(error);
+                            queue.delete(0);
+                            return message.reply(error);
                         });
+                        for (let msg of messages) {
+                            await message
+                                .reply(msg.message, {
+                                    files: msg.files
+                                })
+                                .catch(error => {
+                                    console.log(error);
+                                    queue.delete(0);
+                                    return message.reply(error);
+                                });
+                        }
+                        console.log('Finished processing.');
+                    } else {
+                        queue.delete(0);
                     }
-                    console.log('Finished processing.');
-                    processNext();
-                })
-                .catch(error => {
-                    console.log(error);
-                    message.reply(error);
-                    processNext();
-                });
+                } catch (err) {
+                    console.log(err);
+                    queue.delete(0);
+                    throw err;
+                }
+                emptyDirs();
+                queue.get(0).jobs.shift();
+            }
+            queue.delete(0);
         } else {
             queue.get(0).jobs.push(upscaleJob);
             return message.channel.send(
@@ -333,21 +374,6 @@ async function process(job) {
         });
     }
     return messages;
-}
-
-function processNext() {
-    emptyDirs();
-    queue.get(0).jobs.shift();
-    try {
-        if (queue.get(0).jobs.length > 0) {
-            process(queue.get(0).jobs[0]);
-        } else {
-            queue.delete(0);
-        }
-    } catch (err) {
-        console.log(err);
-        queue.delete(0);
-    }
 }
 
 // Runs ESRGAN
