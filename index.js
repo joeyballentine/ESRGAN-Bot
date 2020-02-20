@@ -38,7 +38,7 @@ client.on('ready', () => {
 
 client.on('error', console.error);
 
-client.on('message', async (message) => {
+client.on('message', async message => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
     const args = message.content.slice(prefix.length).split(' ');
     const command = args.shift().toLowerCase();
@@ -125,7 +125,7 @@ client.on('message', async (message) => {
                         );
                         let messages = await process(
                             queue.get(0).jobs[0]
-                        ).catch((error) => {
+                        ).catch(error => {
                             console.log(error);
                             queue.delete(0);
                             return upscaleJob.message.reply(error);
@@ -137,7 +137,7 @@ client.on('message', async (message) => {
                                 .reply(msg.message, {
                                     files: msg.files
                                 })
-                                .catch((error) => {
+                                .catch(error => {
                                     console.log(error);
                                     queue.delete(0);
                                     return upscaleJob.message.reply(error);
@@ -238,7 +238,7 @@ function emptyDirs() {
 async function process(job) {
     // Downloads the image
     let downloaded = await downloadImage(job.url, esrganPath + '/LR/').catch(
-        (error) => {
+        error => {
             console.log(error);
             throw `Sorry, your image failed to download.`;
         }
@@ -255,7 +255,7 @@ async function process(job) {
     // Converts image to png if it isn't
     if (image.ext.toLowerCase() !== '.png') {
         await convertToPNG(image.path)
-            .catch((error) => {
+            .catch(error => {
                 console.log(error);
                 throw 'Sorry, there was an error processing your image. [c]';
             })
@@ -310,7 +310,7 @@ async function process(job) {
             `${esrganPath}/results/`,
             image.name,
             `${esrganPath}/LR/`
-        ).catch((error) => {
+        ).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [me]';
         });
@@ -508,10 +508,10 @@ function webpLossy(image) {
 function setStatus(status) {
     client.user
         .setActivity(status, { type: 'PLAYING' })
-        .then(presence =>
-            console.log(
-                `Activity set to ${presence.game ? presence.game.name : 'none'}`
-            )
-        )
+        // .then(presence =>
+        //     console.log(
+        //         `Activity set to ${presence.game ? presence.game.name : 'none'}`
+        //     )
+        // )
         .catch(console.error);
 }

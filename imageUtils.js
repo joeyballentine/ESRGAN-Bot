@@ -9,7 +9,7 @@ exports.downscale = async (imagePath, amount, filter) => {
     let size = (1.0 / amount) * 100.0 + '%';
     return new Promise((resolve, reject) => {
         exec(
-            `magick mogrify -resize ${size} -filter ${filter} -format png ${imagePath}`,
+            `magick mogrify -resize ${size} -filter ${filter} -format png "${imagePath}"`,
             (error, stdout, stderr) => {
                 if (error || stderr) {
                     console.log(error, stderr);
@@ -33,7 +33,7 @@ exports.convertToPNG = async imagePath => {
             resolve(imagePath);
         } else {
             exec(
-                `magick mogrify -format png ${imagePath}`,
+                `magick mogrify -format png "${imagePath}"`,
                 (error, stdout, stderr) => {
                     if (error || stderr) {
                         console.log(error, stderr);
@@ -56,14 +56,14 @@ exports.convertToPNG = async imagePath => {
 exports.split = async imagePath => {
     return new Promise((resolve, reject) => {
         exec(
-            `magick mogrify -bordercolor Black -border 8x8 ${imagePath}`,
+            `magick mogrify -bordercolor Black -border 8x8 "${imagePath}"`,
             (error, stdout, stderr) => {
                 if (error || stderr) {
                     console.log(error, stderr);
                     reject();
                 }
                 exec(
-                    `magick mogrify -crop 3x3+16+16@ +repage ${imagePath}`,
+                    `magick mogrify -crop 3x3+16+16@ +repage "${imagePath}"`,
                     (error, stdout, stderr) => {
                         if (error || stderr) {
                             console.log(error, stderr);
@@ -103,7 +103,7 @@ exports.merge = async (resultDir, imageName, lrDir) => {
                     reject();
                 }
                 exec(
-                    `magick montage ${resultDir}/*.png -geometry -${overlap}-${overlap} -background black -depth 8 -define png:color-type=2 ${resultDir}/${imageName}_rlt.png`,
+                    `magick montage ${resultDir}/*.png -geometry -${overlap}-${overlap} -background black -depth 8 -define png:color-type=2 "${resultDir}/${imageName}_rlt.png"`,
                     (error, stdout, stderr) => {
                         if (error || stderr) {
                             console.log(error, stderr);
