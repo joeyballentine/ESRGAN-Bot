@@ -32,6 +32,7 @@ const models = new FuzzyMatching(fs.readdirSync(`${esrganPath}/models/`));
 
 client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
+    setStatus('Ready to upscale!');
     emptyDirs();
 });
 
@@ -151,6 +152,8 @@ client.on('message', async message => {
                             queue.delete(0);
                             return message.reply(error);
                         });
+                        console.log('Sending...');
+                        setStatus('Sending...');
                         for (let msg of messages) {
                             await message
                                 .reply(msg.message, {
@@ -162,6 +165,7 @@ client.on('message', async message => {
                                     return message.reply(error);
                                 });
                         }
+                        setStatus('Ready to upscale!');
                         console.log('Finished processing.');
                     } else {
                         queue.delete(0);
@@ -295,6 +299,7 @@ async function process(job) {
     // Downscales the image if argument provided
     if (job.downscale) {
         console.log('Downscaling...');
+        setStatus('Downscaling...');
         await downscale(image.path, job.downscale, job.filter).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [d]';
@@ -304,6 +309,7 @@ async function process(job) {
     // Splits if needed
     if (job.split) {
         console.log('Splitting...');
+        setStatus('Splitting...');
         await split(image.path).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [s]';
@@ -312,6 +318,7 @@ async function process(job) {
 
     // Upscales the image(s)
     console.log('Upscaling...');
+    setStatus('Upscaling...');
     await upscale(job.model).catch(error => {
         console.log(error);
         throw 'Sorry, there was an error processing your image. [u]';
@@ -320,6 +327,7 @@ async function process(job) {
     // Merges the images if split was needed
     if (job.split) {
         console.log('Merging...');
+        setStatus('Merging...');
         await merge(
             `${esrganPath}/results/`,
             image.name,
@@ -333,6 +341,7 @@ async function process(job) {
     // Montages the LR and result if argument provided
     if (job.montage && !job.split) {
         console.log('Montaging...');
+        setStatus('Montaging...');
         await montage(image, job.model, job.message).catch(error => {
             console.log(error);
             throw 'Sorry, there was an error processing your image. [mo]';
@@ -341,6 +350,7 @@ async function process(job) {
 
     // Optimizes the images
     console.log('Optimizing...');
+    setStatus('Optimizing...');
     await optimize(`${esrganPath}/results/`).catch(error => {
         console.log(error);
         throw 'Sorry, there was an error processing your image. [o]';
@@ -362,7 +372,6 @@ async function process(job) {
         throw 'Sorry, there was an error processing your image. [s]';
     }
     let messages = [];
-    console.log('Sending...');
     messages.push({
         message: `Upscaled using ${job.model}`,
         files: [resultImage]
@@ -516,4 +525,15 @@ function webpLossy(image) {
             }
         );
     });
+}
+
+function setStatus(status) {
+    client.user
+        .setActivity(status, { type: 'PLAYING' })
+        .then(presence =>
+            console.log(
+                `Activity set to ${presence.game ? presence.game.name : 'none'}`
+            )
+        )
+        .catch(console.error);
 }
