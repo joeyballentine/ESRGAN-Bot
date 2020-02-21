@@ -39,7 +39,12 @@ client.on('ready', () => {
 client.on('error', console.error);
 
 client.on('message', async message => {
-    if (!message.content.startsWith(prefix) || message.author.bot) return;
+    if (
+        !message.content.startsWith(prefix) ||
+        message.author.bot ||
+        message.channel.type == 'dm'
+    )
+        return;
     const args = message.content.slice(prefix.length).split(' ');
     const command = args.shift().toLowerCase();
 
@@ -61,10 +66,6 @@ client.on('message', async message => {
             // If no image is given the bot will error
             return message.channel.send('Not a valid command.');
         }
-
-        // Sanitizing the url
-        // url = url.split('&')[0];
-        // url = url.split('?')[0];
 
         // Downloads the image
         let image = url.split('/').pop();
@@ -118,29 +119,30 @@ client.on('message', async message => {
 
             // Process queue until empty
             while (queue.get(0).jobs.length > 0) {
+                let currentJob = queue.get(0).jobs[0];
                 try {
                     if (queue.get(0).jobs.length > 0) {
-                        upscaleJob.message.channel.send(
-                            `${upscaleJob.image} is being processed using ${upscaleJob.model}.`
+                        currentJob.message.channel.send(
+                            `${currentJob.image} is being processed using ${currentJob.model}.`
                         );
                         let messages = await process(
                             queue.get(0).jobs[0]
                         ).catch(error => {
                             console.log(error);
                             queue.delete(0);
-                            return upscaleJob.message.reply(error);
+                            return currentJob.message.reply(error);
                         });
                         console.log('Sending...');
                         setStatus('Sending...');
                         for (let msg of messages) {
-                            await upscaleJob.message
+                            await currentJob.message
                                 .reply(msg.message, {
                                     files: msg.files
                                 })
                                 .catch(error => {
                                     console.log(error);
                                     queue.delete(0);
-                                    return upscaleJob.message.reply(error);
+                                    return currentJob.message.reply(error);
                                 });
                         }
                         setStatus('Ready to upscale!');
