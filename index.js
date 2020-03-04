@@ -28,7 +28,45 @@ const queue = new Map();
 // Configuration
 const { token, prefix, pixelLimit, esrganPath } = require('./config.json');
 
-const models = new FuzzyMatching(fs.readdirSync(`${esrganPath}/models/`));
+var fuzzymodels, aliases;
+
+function buildAliases() {
+    aliases = {};
+    let models = fs.readdirSync(`${esrganPath}/models/`);
+
+    // Create aliases for models based on unique parts
+    for (let model of models) {
+        let name = path.basename(model, '.pth');
+        let parts = name.match(/([0-9]+x?|[A-Z]+(?![a-z])|[A-Z][^A-Z0-9_-]*)/g);
+        for (let i = 0; i < parts.length; i++) {
+            for (let j = i+1; j <= parts.length; j++) {
+                let alias = parts.slice(i, j).join('');
+                if (aliases[alias] === undefined) {
+                    aliases[alias] = model;
+                } else {
+                    aliases[alias] = false;
+                }
+            }
+        }
+    }
+
+    // Ensure exact names are usable
+    for (let model of models) {
+        let name = path.basename(model, '.pth');
+        aliases[name] = model;
+    }
+
+    // Build list of usable aliases
+    let fuzzylist = [];
+    for (let alias in aliases) {
+        if (aliases[alias]) {
+            fuzzylist.push(alias);
+        }
+    }
+    console.log('Made ' + fuzzylist.length + ' aliases for ' + models.length + ' models.');
+    fuzzymodels = new FuzzyMatching(fuzzylist);
+}
+buildAliases();
 
 client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
@@ -71,12 +109,13 @@ client.on('message', async message => {
         let image = url.split('/').pop();
 
         // Gets the model name from the model argument
-        let model = models.get(
-            args[0].includes('.pth') ? args[0] : args[0] + '.pth'
-        ).value;
+        let model = aliases[fuzzymodels.get(
+            args[0].endsWith('.pth') ? args[0].slice(0, -4) : args[0]
+        ).value];
 
         // Checks to make sure model name is valid (exists and is spelled right)
         if (!fs.readdirSync(esrganPath + '/models/').includes(model)) {
+            buildAliases();
             return message.channel.send('Not a valid model.');
         }
 
@@ -185,7 +224,6 @@ client.on('message', async message => {
         }
     } else if (command === 'add') {
         let modelName = args[1].includes('.pth') ? args[1] : args[1] + '.pth';
-        models.add(modelName);
         let url = args[0];
         if (url.includes('drive.google.com')) {
             url = url.replace('/view', '');
@@ -197,6 +235,7 @@ client.on('message', async message => {
         }
         message.channel.send('Adding model...');
         downloadModel(args[0], `${esrganPath}/models/`, modelName).then(() => {
+            buildAliases();
             return message.channel.send(
                 `Model ${modelName} successfully added.`
             );
