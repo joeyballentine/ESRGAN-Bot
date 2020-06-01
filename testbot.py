@@ -679,6 +679,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         img1 = cv2.resize(
             img1, (img2.shape[1], img2.shape[0]), interpolation=cv2.INTER_NEAREST)
         img1 = img1.astype(np.float64)
+        img2 = img2.astype(np.float64)
         img = cv2.hconcat([img1, img2])
         img = cv2.copyMakeBorder(
             img,
