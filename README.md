@@ -8,6 +8,8 @@ All credit to the original ESRGAN repository goes to Xinntao, and all credit to 
 
 Also many thanks to the GameUpscale Discord server for helping me test out this rewrite and for using the bot every day :)
 
+You can see a working version of this bot in the GameUpscale discord server here: https://discord.gg/VR9SzTT
+
 ## Setup
 
 ### Configuration
