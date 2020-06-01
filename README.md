@@ -1,45 +1,39 @@
 # ESRGAN-Bot
 
-A Discord bot for upscaling images with ESRGAN, plus a little more.
+A Discord bot for upscaling images with ESRGAN, plus a little more. NOTE: This bot only supports old architecture models and will NOT work with new architecture ones.
+
+This version of the bot is a complete rewrite in python using Discord.py and the original source code by Xinntao, along with modifications from BlueAmulet's fork.
+
+All credit to the original ESRGAN repository goes to Xinntao, and all credit to the original modifications goes to BlueAmulet.
+
+Also many thanks to the GameUpscale Discord server for helping me test out this rewrite and for using the bot every day :)
 
 ## Setup
 
-Clone this repository and initialize the submodule. The included submodule is BlueAmulet's ESRGAN fork, which is technically required for the bot to work. Theoretically you could use another version of ESRGAN, but you would then only be able to use 4x models without further code modification.
-
-### Node
-
-If you already have node.js installed, great! If not, get it here: https://nodejs.org/en/
-
-Once you have the repository cloned, simply type `npm i` or `npm install` in a terminal inside the directory to install all the node dependencies.
-
 ### Configuration
 
-A file in the root of this repository is needed called `config.json`. This is required in order for the bot to work.
+A file in the root of this repository is needed called `config.yml`. This is required in order for the bot to work.
 
 An example `config.json` looks like this:
 
+```yml
+bot_token: 'Discord Bot Token'
+bot_prefix: '--'
+split_threshold: 512
+img_size_cutoff: 1500
+moderator_role_id: 549505502779015178
 ```
-{
-    "token": "Discord Bot Token",
-    "prefix": "!",
-    "pixelLimit": 1000,
-    "esrganPath": "./ESRGAN/"
-}
-```
 
--   `token` is the client token of your Discord bot.
--   `prefix` is the prefix that will be used on all the bot's commands.
--   `pixelLimit` is the number of pixels (both width and height) that will trigger the splitting/merging functionality. This is widely system dependent as the amount of VRAM your GPU has determines how large of an image ESRGAN can process at once. you may need to play with this number a bit to see what works for you.
--   `esrganPath` is the path where ESRGAN is located. If you initialized the submodule, `'./ESRGAN/'` will work fine.
+-   `bot_token` is the client token of your Discord bot.
+-   `bot_prefix` is the prefix that will be used on all the bot's commands.
+-   `split_threshold` is the number of pixels (both width and height) that will trigger the splitting/merging functionality. This is widely system dependent as the amount of VRAM your GPU has determines how large of an image ESRGAN can process at once. you may need to play with this number a bit to see what works for you.
+-   `img_size_cutoff` is the maximum resolution that you will allow someone to submit to the bot to avoid extended upscaling times.
+-   `moderator_role_id` is the role id (can also be the name of the role) that will be allowed to run certain restricted commands.
 
-### Extra Dependencies
+### Models
 
-Alongside the npm modules and ESRGAN itself, you will need bash and ImageMagick for all functionality to work.
-
-If you are using Windows, please install Git for Windows to gain bash functionality.You can get that here: https://gitforwindows.org/
-
-ImageMagick is an image processing tool. You can download ImageMagick here: https://imagemagick.org/script/download.php
+Create a directory called `models` inside this directory, and place any models you want accessible to the bot in this folder.
 
 ## Running the bot
 
-Type `node index.js` to start the bot. If everything was succcessful, you should see `Logged in as [Bot Name]!` printed in the console.
+Run `testbot.py` like you would any other python script.
