@@ -28,7 +28,6 @@ config = {'split_threshold': 837,
           'bot_prefix': '--',
           'bot_token': S3Connection(os.environ['BOT_TOKEN'])}
 
-
 bot = commands.Bot(command_prefix=config['bot_prefix'],
                    description=description)
 bot.remove_command('help')
