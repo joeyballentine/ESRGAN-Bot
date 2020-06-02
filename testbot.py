@@ -18,13 +18,16 @@ from discord.ext import commands
 from fuzzywuzzy import fuzz, process
 
 import architecture as arch
+from boto.s3.connection import S3Connection
 
 description = '''A rewrite of the ESRGAN bot entirely in python'''
 
-try:
-    config = yaml.safe_load(open('./config.yml'))
-except:
-    print('You must provide a config.yml!!!')
+config = {'split_threshold': 837,
+          'img_size_cutoff': 1500,
+          'moderator_role_id': 549505502779015178,
+          'bot_prefix': '--',
+          'bot_token': S3Connection(os.environ['BOT_TOKEN'])}
+
 
 bot = commands.Bot(command_prefix=config['bot_prefix'],
                    description=description)
