@@ -4,4 +4,4 @@ fuzzywuzzy[speedup]
 numpy
 torch
 torchvision
-yaml
+PyYAML
