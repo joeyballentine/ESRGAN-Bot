@@ -185,9 +185,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
         # Grab model name
         try:
-            # model = args.pop(0).split('.')[0] + '.pth'
-            models = [self.aliases[process.extractOne(
-                model.replace('.pth', ''), self.fuzzymodels)[0]] for model in args[1].split('>')[:3]]
+            model_jobs = args[1].split(';')[:3]
         except:
             await message.channel.send('{}, you need to provide a model.'.format(message.author.mention))
 
@@ -235,7 +233,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         except:
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
 
-        if dl_succ and len(models) != 0:
+        if dl_succ and len(model_jobs[0]) != 0:
             if downscale:
                 try:
                     scale_percent = 1 / downscale * 100
@@ -292,8 +290,11 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     self.queue[0] = {
                         'jobs': []
                     }
-                    self.queue[0]['jobs'].append(
-                        {'message': message, 'filename': filename, 'models': models, 'image': image})
+                    for model_job in model_jobs:
+                        models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
+                            0]] for model in model_job.split('>')[:3]]
+                        self.queue[0]['jobs'].append(
+                            {'message': message, 'filename': filename, 'models': models, 'image': image})
                     while (len(self.queue[0]['jobs']) > 0):
                         try:
                             job = self.queue[0]['jobs'].pop(0)
@@ -387,9 +388,12 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                 await job['message'].channel.send('{}, there was an error creating your montage.'.format(job['message'].author.mention))
                     self.queue.pop(0)
                 else:
-                    self.queue[0]['jobs'].append(
-                        {'message': message, 'filename': filename, 'models': models, 'image': image})
-                    await message.channel.send('{}, {} has been added to the queue. Your image is #{} in line for processing.'.format(message.author.mention, filename, len(self.queue[0]['jobs'])))
+                    for model_job in model_jobs:
+                        models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
+                            0]] for model in model_job.split('>')[:3]]
+                        self.queue[0]['jobs'].append(
+                            {'message': message, 'filename': filename, 'models': models, 'image': image})
+                        await message.channel.send('{}, {} has been added to the queue. Your image is #{} in line for processing.'.format(message.author.mention, filename, len(self.queue[0]['jobs'])))
             else:
                 await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
 
