@@ -1,0 +1,6 @@
+discord.py
+cv2
+fuzzywuzzy
+numpy
+torch
+yaml
