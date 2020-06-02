@@ -44,7 +44,7 @@ class ESRGAN(commands.Cog):
         self.last_nb = None
         self.last_scale = None
         self.model = None
-        self.device = torch.device('cuda')
+        self.device = torch.device('cpu')
 
         # This group of variables pertain to the models list
         self.models = []
