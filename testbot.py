@@ -186,8 +186,11 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         # Grab model name
         try:
             # model = args.pop(0).split('.')[0] + '.pth'
-            model_name = self.aliases[process.extractOne(
-                args[1].replace('.pth', ''), self.fuzzymodels)[0]]
+            models = args[1].split('>')
+            model_names = []
+            for model in models:
+                model_names.append(self.aliases[process.extractOne(
+                    model.replace('.pth', ''), self.fuzzymodels)[0]])
         except:
             await message.channel.send('{}, you need to provide a model.'.format(message.author.mention))
 
@@ -234,7 +237,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         except:
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
 
-        if dl_succ and model_name != None:
+        if dl_succ and len(model_names) != 0:
             if downscale:
                 try:
                     scale_percent = 1 / downscale * 100
@@ -292,56 +295,65 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         'jobs': []
                     }
                     self.queue[0]['jobs'].append(
-                        {'message': message, 'filename': filename, 'model_name': model_name, 'image': image})
+                        {'message': message, 'filename': filename, 'model_names': model_names, 'image': image})
                     while (len(self.queue[0]['jobs']) > 0):
                         try:
                             job = self.queue[0]['jobs'].pop(0)
-                            sent_message = await message.channel.send(job['filename'] + ' is being upscaled using ' + job['model_name'])
+                            sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['model_names']) if len(job['model_names']) > 1 else job['model_names'][0]}")
 
                             img = job['image']
 
-                            img_height, img_width, img_channels = img.shape
-                            dim = config['split_threshold']
-                            overlap = 16
+                            # this is needed for montaging with chains
+                            og_image = img
 
-                            # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
-                            # So, I just keep increasing the split size until its an acceptable number
-                            # TODO: Figure out why it crashes in the first place
-                            while img_height % dim < 5 or img_width % dim < 5:
-                                dim += 1
+                            for i in range(len(model_names)):
 
-                            do_split = img_height > dim or img_width > dim
-                            await sent_message.edit(content=sent_message.content + ' | ')
+                                img_height, img_width, img_channels = img.shape
+                                dim = config['split_threshold']
+                                overlap = 16
 
-                            if seamless:
-                                img = self.make_seamless(img)
+                                # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
+                                # So, I just keep increasing the split size until its an acceptable number
+                                # TODO: Figure out why it crashes in the first place
+                                while img_height % dim < 5 or img_width % dim < 5:
+                                    dim += 1
 
-                            if do_split:
-                                await sent_message.edit(content=sent_message.content + ' Splitting...')
-                                imgs, num_horiz, num_vert = self.split(
-                                    img, dim, overlap)
-                            else:
-                                imgs = [img]
+                                do_split = img_height > dim or img_width > dim
+                                await sent_message.edit(content=sent_message.content + ' | ')
 
-                            await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                            rlts, scale = self.esrgan(imgs, job['model_name'])
+                                if seamless:
+                                    img = self.make_seamless(img)
 
-                            if do_split:
-                                await sent_message.edit(content=sent_message.content + ' Merging...')
-                                rlt = self.merge(rlts, scale, overlap,
-                                                 img_height, img_width, img_channels, num_horiz, num_vert)
-                            else:
-                                rlt = rlts[0]
+                                if do_split:
+                                    await sent_message.edit(content=sent_message.content + ' Splitting...')
+                                    imgs, num_horiz, num_vert = self.split(
+                                        img, dim, overlap)
+                                else:
+                                    imgs = [img]
 
-                            if seamless:
-                                rlt = self.crop_seamless(rlt, scale)
+                                await sent_message.edit(content=sent_message.content + ' Upscaling...')
+                                rlts, scale = self.esrgan(
+                                    imgs, job['model_names'][i])
 
-                            # attempts to fix broken alpha contrast caused by model
-                            if fixhist and img.ndim == 3 and img.shape[2] == 4:
-                                # a = cv2.equalizeHist(a.astype('uint8'))
-                                a = self.hist_match(
-                                    cv2.split(rlt)[3], cv2.split(img)[3])
-                                rlt[:, :, 3] = a
+                                if do_split:
+                                    await sent_message.edit(content=sent_message.content + ' Merging...')
+                                    rlt = self.merge(rlts, scale, overlap,
+                                                     img_height, img_width, img_channels, num_horiz, num_vert)
+                                else:
+                                    rlt = rlts[0]
+
+                                if seamless:
+                                    rlt = self.crop_seamless(rlt, scale)
+
+                                # attempts to fix broken alpha contrast caused by model
+                                if fixhist and img.ndim == 3 and img.shape[2] == 4:
+                                    # a = cv2.equalizeHist(a.astype('uint8'))
+                                    a = self.hist_match(
+                                        cv2.split(rlt)[3], cv2.split(img)[3])
+                                    rlt[:, :, 3] = a
+
+                                if len(model_names) > 1:
+                                    img = rlt.astype('uint8')
 
                             await sent_message.edit(content=sent_message.content + ' Sending...')
 
@@ -354,7 +366,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                 data = BytesIO(cv2.imencode('.webp', rlt, [
                                     cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
                             # send result through discord
-                            await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, job['model_name']), file=discord.File(data, job['filename'].split('.')[0] + ext))
+                            await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['model_names']) if len(job['model_names']) > 1 else job['model_names'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
                             await sent_message.edit(content=sent_message.content + ' Done.')
                         except Exception as e:
                             print(e)
@@ -363,7 +375,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         if montage:
                             try:
                                 montage_img = self.make_montage(
-                                    img, rlt, model_name)
+                                    og_image, rlt, ', '.join(job['model_names']) if len(job['model_names']) > 1 else job['model_names'][0])
                                 # converts result image to png bytestream
                                 ext = '.png'
                                 data = BytesIO(cv2.imencode('.png', montage_img, [
@@ -378,7 +390,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     self.queue.pop(0)
                 else:
                     self.queue[0]['jobs'].append(
-                        {'message': message, 'filename': filename, 'model_name': model_name, 'image': image})
+                        {'message': message, 'filename': filename, 'model_names': model_names, 'image': image})
                     await message.channel.send('{}, {} has been added to the queue. Your image is #{} in line for processing.'.format(message.author.mention, filename, len(self.queue[0]['jobs'])))
             else:
                 await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
