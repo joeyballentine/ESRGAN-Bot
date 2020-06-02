@@ -186,11 +186,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         # Grab model name
         try:
             # model = args.pop(0).split('.')[0] + '.pth'
-            models = args[1].split('>')
-            model_names = []
-            for model in models:
-                model_names.append(self.aliases[process.extractOne(
-                    model.replace('.pth', ''), self.fuzzymodels)[0]])
+            models = [self.aliases[process.extractOne(
+                model.replace('.pth', ''), self.fuzzymodels)[0]] for model in args[1].split('>')[:3]]
         except:
             await message.channel.send('{}, you need to provide a model.'.format(message.author.mention))
 
@@ -295,7 +292,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         'jobs': []
                     }
                     self.queue[0]['jobs'].append(
-                        {'message': message, 'filename': filename, 'model_names': model_names, 'image': image})
+                        {'message': message, 'filename': filename, 'model_names': models, 'image': image})
                     while (len(self.queue[0]['jobs']) > 0):
                         try:
                             job = self.queue[0]['jobs'].pop(0)
@@ -306,7 +303,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                             # this is needed for montaging with chains
                             og_image = img
 
-                            for i in range(len(model_names)):
+                            for i in range(len(job['model_names'])):
 
                                 img_height, img_width, img_channels = img.shape
                                 dim = config['split_threshold']
@@ -390,7 +387,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     self.queue.pop(0)
                 else:
                     self.queue[0]['jobs'].append(
-                        {'message': message, 'filename': filename, 'model_names': model_names, 'image': image})
+                        {'message': message, 'filename': filename, 'model_names': models, 'image': image})
                     await message.channel.send('{}, {} has been added to the queue. Your image is #{} in line for processing.'.format(message.author.mention, filename, len(self.queue[0]['jobs'])))
             else:
                 await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
