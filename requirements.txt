@@ -2,6 +2,6 @@ discord.py
 opencv-python
 fuzzywuzzy[speedup]
 numpy
-torch==1.4.0
-torchvision==0.5.0+cpu
+pytorch==1.4.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+torchvision==0.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
 PyYAML
