@@ -201,6 +201,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         fixhist = False
         seamless = False
         for index, arg in enumerate(args):
+            arg = arg.lower()
             if arg in {'-downscale', '-d'}:
                 try:
                     downscale = float(args[index + 1])
