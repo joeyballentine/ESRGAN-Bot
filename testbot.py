@@ -29,9 +29,9 @@ s3 = boto3.Session(**boto_kwargs).resource('s3')
 
 description = '''A rewrite of the ESRGAN bot entirely in python'''
 
-config = {'split_threshold': os.getenv('split_threshold'),
-          'img_size_cutoff': os.getenv('img_size_cutoff'),
-          'moderator_role_id': os.getenv('moderator_role_id'),
+config = {'split_threshold': int(os.getenv('split_threshold')),
+          'img_size_cutoff': int(os.getenv('img_size_cutoff')),
+          'moderator_role_id': int(os.getenv('moderator_role_id')),
           'bot_prefix': '--',
           'bot_token': os.getenv('bot_token')}
 
