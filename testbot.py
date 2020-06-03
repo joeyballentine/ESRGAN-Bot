@@ -18,9 +18,14 @@ from discord.ext import commands
 from fuzzywuzzy import fuzz, process
 
 import architecture as arch
-from boto.s3.connection import S3Connection
+import boto3
 
-s3 = S3Connection(os.environ['AWSAccessKeyId'], os.environ['AWSSecretKey'])
+boto_kwargs = {
+    "aws_access_key_id": os.getenv('AWSAccessKeyId'),
+    "aws_secret_access_key": os.getenv('AWSSecretKey'),
+}
+
+s3 = boto3.Session(**boto_kwargs).resource('s3')
 
 description = '''A rewrite of the ESRGAN bot entirely in python'''
 
