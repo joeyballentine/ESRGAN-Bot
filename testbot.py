@@ -44,6 +44,7 @@ class ESRGAN(commands.Cog):
     def __init__(self, bot):
 
         my_bucket = s3.Bucket('esrgan-bot-models')
+        os.mkdir('./models/')
         for s3_object in my_bucket.objects.all():
             filename = s3_object.key
             my_bucket.download_file(s3_object.key, './models/' + filename)
