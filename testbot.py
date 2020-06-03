@@ -18,13 +18,17 @@ from discord.ext import commands
 from fuzzywuzzy import fuzz, process
 
 import architecture as arch
+from boto.s3.connection import S3Connection
+
+s3 = S3Connection(os.environ['AWSAccessKeyId'], os.environ['AWSSecretKey'])
 
 description = '''A rewrite of the ESRGAN bot entirely in python'''
 
-try:
-    config = yaml.safe_load(open('./config.yml'))
-except:
-    print('You must provide a config.yml!!!')
+config = {'split_threshold': os.getenv('split_threshold'),
+          'img_size_cutoff': os.getenv('img_size_cutoff'),
+          'moderator_role_id': os.getenv('moderator_role_id'),
+          'bot_prefix': '--',
+          'bot_token': os.getenv('bot_token')}
 
 bot = commands.Bot(command_prefix=config['bot_prefix'],
                    description=description)
@@ -33,6 +37,12 @@ bot.remove_command('help')
 
 class ESRGAN(commands.Cog):
     def __init__(self, bot):
+
+        my_bucket = s3.Bucket('esrgan-bot-models')
+        for s3_object in my_bucket.objects.all():
+            filename = s3_object.key
+            my_bucket.download_file(s3_object.key, filename)
+
         self.bot = bot
         self.queue = {}
 
