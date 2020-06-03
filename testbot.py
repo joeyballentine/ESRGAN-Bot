@@ -26,7 +26,7 @@ config = {'split_threshold': 837,
           'img_size_cutoff': 1500,
           'moderator_role_id': 549505502779015178,
           'bot_prefix': '--',
-          'bot_token': S3Connection(os.environ['BOT_TOKEN'])}
+          'bot_token': S3Connection(os.environ['bot_token'])}
 
 bot = commands.Bot(command_prefix=config['bot_prefix'],
                    description=description)
