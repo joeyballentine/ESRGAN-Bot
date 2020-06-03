@@ -46,7 +46,7 @@ class ESRGAN(commands.Cog):
         my_bucket = s3.Bucket('esrgan-bot-models')
         for s3_object in my_bucket.objects.all():
             filename = s3_object.key
-            my_bucket.download_file(s3_object.key, filename)
+            my_bucket.download_file(s3_object.key, './models/' + filename)
 
         self.bot = bot
         self.queue = {}
