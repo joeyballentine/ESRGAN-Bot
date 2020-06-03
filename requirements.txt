@@ -5,3 +5,4 @@ numpy
 http://download.pytorch.org/whl/cpu/torch-1.4.0%2Bcpu-cp37-cp37m-linux_x86_64.whl
 http://download.pytorch.org/whl/cpu/torchvision-0.5.0%2Bcpu-cp37-cp37m-linux_x86_64.whl
 PyYAML
+boto
