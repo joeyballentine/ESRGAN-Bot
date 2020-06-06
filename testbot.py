@@ -31,6 +31,11 @@ bot = commands.Bot(command_prefix=config['bot_prefix'],
 bot.remove_command('help')
 
 
+@bot.check
+async def globally_block_dms(ctx):
+    return ctx.guild is not None
+
+
 class ESRGAN(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -137,8 +142,10 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             self.models.remove(model_name)
             self.models.sort()
             os.unlink('./models/{}'.format(model_name))
-            self.build_aliases()
-        await ctx.message.channel.send('Removed model {}!'.format(nickname))
+            self.fuzzymodels, self.aliases = self.build_aliases()
+            await ctx.message.channel.send('Removed model {}!'.format(nickname))
+        else:
+            await ctx.message.channel.send('Model {} doesn\'t exist!'.format(nickname))
 
     @removemodel.error
     async def removemodel_handler(self, ctx, error):
@@ -188,8 +195,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             model_jobs = args[1].split(';')[:3]
         except:
             await message.channel.send('{}, you need to provide a model.'.format(message.author.mention))
-
-        dl_succ = False
+            return
 
         downscale = None
         filter = None
@@ -229,93 +235,93 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             url = urllib.request.urlopen(req)
             image = np.asarray(bytearray(url.read()), dtype="uint8")
             image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
-            dl_succ = True
         except:
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
+            return
 
-        if dl_succ and len(model_jobs[0]) != 0:
-            if downscale:
-                try:
-                    scale_percent = 1 / downscale * 100
-                    width = int(image.shape[1] * scale_percent / 100)
-                    height = int(image.shape[0] * scale_percent / 100)
-                    dim = (width, height)
-                    if filter:
-                        filter = filter.lower()
-                        if filter in {'point', 'nearest', 'nn', 'nearest_neighbor', 'nearestneighbor'}:
-                            interpolation = cv2.INTER_NEAREST
-                        elif filter in {'box', 'area'}:
-                            interpolation = cv2.INTER_AREA
-                        elif filter in {'linear', 'bilinear', 'triangle'}:
-                            interpolation = cv2.INTER_LINEAR
-                        elif filter in {'cubic', 'bicubic'}:
-                            interpolation = cv2.INTER_CUBIC
-                        elif filter in {'exact', 'linear_exact', 'linearexact'}:
-                            interpolation = cv2.INTER_LINEAR_EXACT
-                        elif filter in {'lanczos', 'lanczos64'}:
-                            interpolation = cv2.INTER_LANCZOS4
-                        else:
-                            await message.channel.send('Unknown image filter {}, defaulting to Area.'.format(filter))
-                            interpolation = cv2.INTER_AREA
-                    else:
+        if downscale:
+            try:
+                scale_percent = 1 / downscale * 100
+                width = int(image.shape[1] * scale_percent / 100)
+                height = int(image.shape[0] * scale_percent / 100)
+                dim = (width, height)
+                if filter:
+                    filter = filter.lower()
+                    if filter in {'point', 'nearest', 'nn', 'nearest_neighbor', 'nearestneighbor'}:
+                        interpolation = cv2.INTER_NEAREST
+                    elif filter in {'box', 'area'}:
                         interpolation = cv2.INTER_AREA
-                    image = cv2.resize(image, dim, interpolation=interpolation)
-                except:
-                    await message.channel.send('{}, your image could not be downscaled.'.format(message.author.mention))
-            if blur_type:
-                try:
-                    if not blur_amt:
-                        await message.channel.send('Unknown blur amount {}.'.format(blur_amt))
-                    elif type(blur_amt) != int:
-                        await message.channel.send('Blur amount {} not a number.'.format(blur_amt))
+                    elif filter in {'linear', 'bilinear', 'triangle'}:
+                        interpolation = cv2.INTER_LINEAR
+                    elif filter in {'cubic', 'bicubic'}:
+                        interpolation = cv2.INTER_CUBIC
+                    elif filter in {'exact', 'linear_exact', 'linearexact'}:
+                        interpolation = cv2.INTER_LINEAR_EXACT
+                    elif filter in {'lanczos', 'lanczos64'}:
+                        interpolation = cv2.INTER_LANCZOS4
                     else:
-                        # if blur_type in {'box', 'average'}:
-                        #     image = cv2.boxFilter(
-                        #         image, blur_amt, (blur_amt, blur_amt))
-                        if blur_type in {'gauss', 'gaussian'}:
-                            if blur_amt % 2 != 1:
-                                blur_amt += 1
-                            image = cv2.GaussianBlur(
-                                image, (blur_amt, blur_amt), cv2.BORDER_DEFAULT)
-                        elif blur_type in {'median'}:
-                            if blur_amt % 2 != 1:
-                                blur_amt += 1
-                            image = cv2.medianBlur(image, blur_amt)
-                        else:
-                            await message.channel.send('Unknown blur type {}.'.format(blur_type))
-                except:
-                    await message.channel.send('{}, your image could not be blurred.'.format(message.author.mention))
-            if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
-                if len(self.queue) == 0:
-                    self.queue[0] = {
-                        'jobs': []
-                    }
-                    for model_job in model_jobs:
-                        models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
-                            0]] for model in model_job.split('>')[:3]]
-                        self.queue[0]['jobs'].append(
-                            {'message': message, 'filename': filename, 'models': models, 'image': image})
-                    while (len(self.queue[0]['jobs']) > 0):
-                        try:
-                            job = self.queue[0]['jobs'].pop(0)
-                            sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]}")
+                        await message.channel.send('Unknown image filter {}, defaulting to Area.'.format(filter))
+                        interpolation = cv2.INTER_AREA
+                else:
+                    interpolation = cv2.INTER_AREA
+                image = cv2.resize(image, dim, interpolation=interpolation)
+            except:
+                await message.channel.send('{}, your image could not be downscaled.'.format(message.author.mention))
+        if blur_type:
+            try:
+                if not blur_amt:
+                    await message.channel.send('Unknown blur amount {}.'.format(blur_amt))
+                elif type(blur_amt) != int:
+                    await message.channel.send('Blur amount {} not a number.'.format(blur_amt))
+                else:
+                    # if blur_type in {'box', 'average'}:
+                    #     image = cv2.boxFilter(
+                    #         image, blur_amt, (blur_amt, blur_amt))
+                    if blur_type in {'gauss', 'gaussian'}:
+                        if blur_amt % 2 != 1:
+                            blur_amt += 1
+                        image = cv2.GaussianBlur(
+                            image, (blur_amt, blur_amt), cv2.BORDER_DEFAULT)
+                    elif blur_type in {'median'}:
+                        if blur_amt % 2 != 1:
+                            blur_amt += 1
+                        image = cv2.medianBlur(image, blur_amt)
+                    else:
+                        await message.channel.send('Unknown blur type {}.'.format(blur_type))
+            except:
+                await message.channel.send('{}, your image could not be blurred.'.format(message.author.mention))
+        if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
+            if len(self.queue) == 0:
+                self.queue[0] = {
+                    'jobs': []
+                }
+                for model_job in model_jobs:
+                    models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
+                        0]] for model in model_job.split('>')[:3]]
+                    self.queue[0]['jobs'].append(
+                        {'message': message, 'filename': filename, 'models': models, 'image': image})
+                while (len(self.queue[0]['jobs']) > 0):
+                    try:
+                        job = self.queue[0]['jobs'].pop(0)
+                        sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]}")
 
-                            img = job['image']
+                        img = job['image']
 
-                            # this is needed for montaging with chains
-                            og_image = img
+                        # this is needed for montaging with chains
+                        og_image = img
 
-                            for i in range(len(job['models'])):
+                        for i in range(len(job['models'])):
 
-                                img_height, img_width, img_channels = img.shape
-                                dim = config['split_threshold']
-                                overlap = 16
+                            img_height, img_width, img_channels = img.shape
+                            dim = config['split_threshold']
+                            overlap = 16
 
+                            if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
                                 # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
                                 # So, I just keep increasing the split size until its an acceptable number
                                 # TODO: Figure out why it crashes in the first place
-                                while img_height % dim < 5 or img_width % dim < 5:
-                                    dim += 1
+                                while img_height % dim < 16 or img_width % dim < 16:
+                                    dim -= 16
 
                                 do_split = img_height > dim or img_width > dim
                                 await sent_message.edit(content=sent_message.content + ' | ')
@@ -350,52 +356,55 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                     a = self.hist_match(
                                         cv2.split(rlt)[3], cv2.split(img)[3])
                                     rlt[:, :, 3] = a
+                            else:
+                                await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
+                                break
 
-                                if len(models) > 1:
-                                    img = rlt.astype('uint8')
+                            if len(models) > 1:
+                                img = rlt.astype('uint8')
 
-                            await sent_message.edit(content=sent_message.content + ' Sending...')
+                        await sent_message.edit(content=sent_message.content + ' Sending...')
 
+                        # converts result image to png bytestream
+                        ext = '.png'
+                        data = BytesIO(cv2.imencode('.png', rlt, [
+                            cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
+                        if (len(data.getvalue()) >= 8000000):
+                            ext = '.webp'
+                            data = BytesIO(cv2.imencode('.webp', rlt, [
+                                cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
+                        # send result through discord
+                        await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
+                        await sent_message.edit(content=sent_message.content + ' Done.')
+                    except Exception as e:
+                        print(e)
+                        await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
+
+                    if montage:
+                        try:
+                            montage_img = self.make_montage(
+                                og_image, rlt, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0])
                             # converts result image to png bytestream
                             ext = '.png'
-                            data = BytesIO(cv2.imencode('.png', rlt, [
+                            data = BytesIO(cv2.imencode('.png', montage_img, [
                                 cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
                             if (len(data.getvalue()) >= 8000000):
                                 ext = '.webp'
-                                data = BytesIO(cv2.imencode('.webp', rlt, [
+                                data = BytesIO(cv2.imencode('.webp', montage_img, [
                                     cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
-                            # send result through discord
-                            await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
-                            await sent_message.edit(content=sent_message.content + ' Done.')
-                        except Exception as e:
-                            print(e)
-                            await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
-
-                        if montage:
-                            try:
-                                montage_img = self.make_montage(
-                                    og_image, rlt, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0])
-                                # converts result image to png bytestream
-                                ext = '.png'
-                                data = BytesIO(cv2.imencode('.png', montage_img, [
-                                    cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
-                                if (len(data.getvalue()) >= 8000000):
-                                    ext = '.webp'
-                                    data = BytesIO(cv2.imencode('.webp', montage_img, [
-                                        cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
-                                await job['message'].channel.send('{}, your montage has been created.'.format(job['message'].author.mention), file=discord.File(data, job['filename'].split('.')[0] + '_montage' + ext))
-                            except:
-                                await job['message'].channel.send('{}, there was an error creating your montage.'.format(job['message'].author.mention))
-                    self.queue.pop(0)
-                else:
-                    for model_job in model_jobs:
-                        models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
-                            0]] for model in model_job.split('>')[:3]]
-                        self.queue[0]['jobs'].append(
-                            {'message': message, 'filename': filename, 'models': models, 'image': image})
-                        await message.channel.send('{}, {} has been added to the queue. Your image is #{} in line for processing.'.format(message.author.mention, filename, len(self.queue[0]['jobs'])))
+                            await job['message'].channel.send('{}, your montage has been created.'.format(job['message'].author.mention), file=discord.File(data, job['filename'].split('.')[0] + '_montage' + ext))
+                        except:
+                            await job['message'].channel.send('{}, there was an error creating your montage.'.format(job['message'].author.mention))
+                self.queue.pop(0)
             else:
-                await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
+                for model_job in model_jobs:
+                    models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
+                        0]] for model in model_job.split('>')[:3]]
+                    self.queue[0]['jobs'].append(
+                        {'message': message, 'filename': filename, 'models': models, 'image': image})
+                    await message.channel.send('{}, {} has been added to the queue. Your image is #{} in line for processing.'.format(message.author.mention, filename, len(self.queue[0]['jobs'])))
+        else:
+            await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
 
     def split(self, img, dim, overlap):
         '''
