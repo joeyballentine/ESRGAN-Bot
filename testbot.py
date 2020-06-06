@@ -182,6 +182,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await ctx.message.channel.send('{}, one of your images could not be downloaded.'.format(ctx.message.author.mention))
             return
 
+        await ctx.message.channel.send('Creating montage...'.format(ctx.message.author.mention))
+
         try:
             montage = self.make_montage(image_1, image_2, label)
         except:
