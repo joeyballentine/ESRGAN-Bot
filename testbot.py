@@ -78,6 +78,8 @@ class ESRGAN(commands.Cog):
 
 `{0}montage [url1] [url2] [label]` // Creates a montage of two specified images with specified label
 
+`{0}downscale [url] [amount] [filter]` // Downscales the image by the amount listed. Filter is optional and defaults to box/area.
+
 `{0}help` // Lists this information again.
 
 Optional `{0}upscale` args:
@@ -173,25 +175,58 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
     @commands.command()
     async def montage(self, ctx, img1, img2, label):
-        req = urllib.request.Request(img1, headers={
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
-        })
-        url = urllib.request.urlopen(req)
-        image_1 = np.asarray(bytearray(url.read()), dtype="uint8")
-        image_1 = cv2.imdecode(image_1, cv2.IMREAD_UNCHANGED)
+        try:
+            image_1 = self.download_img_from_url(img1)
+            image_2 = self.download_img_from_url(img2)
+        except:
+            await ctx.message.channel.send('{}, one of your images could not be downloaded.'.format(ctx.message.author.mention))
+            return
 
-        req = urllib.request.Request(img2, headers={
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
-        })
-        url = urllib.request.urlopen(req)
-        image_2 = np.asarray(bytearray(url.read()), dtype="uint8")
-        image_2 = cv2.imdecode(image_2, cv2.IMREAD_UNCHANGED)
+        await ctx.message.channel.send('Creating montage...'.format(ctx.message.author.mention))
 
-        montage = self.make_montage(image_1, image_2, label)
+        try:
+            montage = self.make_montage(image_1, image_2, label)
+        except:
+            await ctx.message.channel.send('{}, there was an error creating your montage.'.format(ctx.message.author.mention))
+            return
+
         data = BytesIO(cv2.imencode('.png', montage, [
             cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
 
         await ctx.message.channel.send('', file=discord.File(data, 'montage.png'))
+
+    @commands.command()
+    async def downscale(self, ctx, img, amt, filter='area'):
+        try:
+            image = self.download_img_from_url(img)
+            filename = img[img.rfind("/")+1:]
+        except:
+            await ctx.message.channel.send('{}, your images could not be downloaded.'.format(ctx.message.author.mention))
+            return
+
+        await ctx.message.channel.send('Downscaling image...')
+
+        if filter in {'point', 'nearest', 'nn', 'nearest_neighbor', 'nearestneighbor'}:
+            interpolation = cv2.INTER_NEAREST
+        elif filter in {'box', 'area'}:
+            interpolation = cv2.INTER_AREA
+        elif filter in {'linear', 'bilinear', 'triangle'}:
+            interpolation = cv2.INTER_LINEAR
+        elif filter in {'cubic', 'bicubic'}:
+            interpolation = cv2.INTER_CUBIC
+        elif filter in {'exact', 'linear_exact', 'linearexact'}:
+            interpolation = cv2.INTER_LINEAR_EXACT
+        elif filter in {'lanczos', 'lanczos64'}:
+            interpolation = cv2.INTER_LANCZOS4
+        else:
+            interpolation = cv2.INTER_AREA
+
+        image = self.downscale_img(image, interpolation, amt)
+
+        data = BytesIO(cv2.imencode('.png', image, [
+            cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
+
+        await ctx.message.channel.send('{}, your image has been downscaled by {}.'.format(ctx.author.mention, amt), file=discord.File(data, '{}.png'.format(filename.split('.')[0])))
 
     @commands.command()
     async def upscale(self, ctx, *args):
@@ -216,74 +251,22 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await message.channel.send('{}, you need to provide a model.'.format(message.author.mention))
             return
 
-        downscale = None
-        filter = None
-        montage = False
-        blur_type = None
-        blur_amt = None
-        fixhist = False
-        seamless = False
-        for index, arg in enumerate(args):
-            arg = arg.lower()
-            if arg in {'-downscale', '-d'}:
-                try:
-                    downscale = float(args[index + 1])
-                except:
-                    await message.channel.send('Downscale value not specified.')
-            elif arg in {'-filter', '-f'}:
-                try:
-                    filter = args[index + 1]
-                except:
-                    await message.channel.send('Filter value not specified.')
-            elif arg in {'-blur', '-b'}:
-                try:
-                    blur_type = args[index + 1]
-                    blur_amt = int(args[index + 2])
-                except:
-                    await message.channel.send('Blur requires 2 arguments, type and amount.')
-            elif arg in {'-montage', '-m'}:
-                montage = True
-            elif arg in {'-fixhist', '-fh', '-fix'}:
-                fixhist = True
-            elif arg in {'-seamless', '-s'}:
-                seamless = True
         try:
-            req = urllib.request.Request(url, headers={
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
-            })
-            url = urllib.request.urlopen(req)
-            image = np.asarray(bytearray(url.read()), dtype="uint8")
-            image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
+            downscale, filter, montage, blur_type, blur_amt, fixhist, seamless = self.parse_flags(
+                args, message)
+        except ValueError as e:
+            await message.channel.send(e)
+            return
+
+        try:
+            image = self.download_img_from_url(url)
         except:
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
             return
 
         if downscale:
             try:
-                scale_percent = 1 / downscale * 100
-                width = int(image.shape[1] * scale_percent / 100)
-                height = int(image.shape[0] * scale_percent / 100)
-                dim = (width, height)
-                if filter:
-                    filter = filter.lower()
-                    if filter in {'point', 'nearest', 'nn', 'nearest_neighbor', 'nearestneighbor'}:
-                        interpolation = cv2.INTER_NEAREST
-                    elif filter in {'box', 'area'}:
-                        interpolation = cv2.INTER_AREA
-                    elif filter in {'linear', 'bilinear', 'triangle'}:
-                        interpolation = cv2.INTER_LINEAR
-                    elif filter in {'cubic', 'bicubic'}:
-                        interpolation = cv2.INTER_CUBIC
-                    elif filter in {'exact', 'linear_exact', 'linearexact'}:
-                        interpolation = cv2.INTER_LINEAR_EXACT
-                    elif filter in {'lanczos', 'lanczos64'}:
-                        interpolation = cv2.INTER_LANCZOS4
-                    else:
-                        await message.channel.send('Unknown image filter {}, defaulting to Area.'.format(filter))
-                        interpolation = cv2.INTER_AREA
-                else:
-                    interpolation = cv2.INTER_AREA
-                image = cv2.resize(image, dim, interpolation=interpolation)
+                image = self.downscale_img(image, filter, downscale)
             except:
                 await message.channel.send('{}, your image could not be downscaled.'.format(message.author.mention))
         if blur_type:
@@ -776,6 +759,73 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         h, w = img_height - (32 * scale), img_width - (32 * scale)
         img = img[y:y+h, x:x+w]
         return img
+
+    def parse_flags(self, args, message):
+        downscale = None
+        filter = cv2.INTER_AREA
+        montage = False
+        blur_type = None
+        blur_amt = None
+        fixhist = False
+        seamless = False
+        for index, arg in enumerate(args):
+            arg = arg.lower()
+            if arg in {'-downscale', '-d'}:
+                try:
+                    downscale = float(args[index + 1])
+                except:
+                    raise ValueError('Downscale value not specified.')
+            elif arg in {'-filter', '-f'}:
+                try:
+                    interpolation = args[index + 1].lower()
+                    if interpolation in {'point', 'nearest', 'nn', 'nearest_neighbor', 'nearestneighbor'}:
+                        filter = cv2.INTER_NEAREST
+                    elif interpolation in {'box', 'area'}:
+                        filter = cv2.INTER_AREA
+                    elif interpolation in {'linear', 'bilinear', 'triangle'}:
+                        filter = cv2.INTER_LINEAR
+                    elif interpolation in {'cubic', 'bicubic'}:
+                        filter = cv2.INTER_CUBIC
+                    elif interpolation in {'exact', 'linear_exact', 'linearexact'}:
+                        filter = cv2.INTER_LINEAR_EXACT
+                    elif interpolation in {'lanczos', 'lanczos64'}:
+                        filter = cv2.INTER_LANCZOS4
+                    else:
+                        raise ValueError(
+                            'Unknown image filter {}.'.format(interpolation))
+                except:
+                    raise ValueError('Filter value not specified.')
+            elif arg in {'-blur', '-b'}:
+                try:
+                    blur_type = args[index + 1]
+                    blur_amt = int(args[index + 2])
+                except:
+                    raise ValueError(
+                        'Blur requires 2 arguments, type and amount.')
+            elif arg in {'-montage', '-m'}:
+                montage = True
+            elif arg in {'-fixhist', '-fh', '-fix'}:
+                fixhist = True
+            elif arg in {'-seamless', '-s'}:
+                seamless = True
+        return downscale, filter, montage, blur_type, blur_amt, fixhist, seamless
+
+    def downscale_img(self, image, filter, amt):
+        scale_percent = 1 / int(amt) * 100
+        width = int(image.shape[1] * scale_percent / 100)
+        height = int(image.shape[0] * scale_percent / 100)
+        dim = (width, height)
+        image = cv2.resize(image, dim, interpolation=filter)
+        return image
+
+    def download_img_from_url(self, img):
+        req = urllib.request.Request(img, headers={
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
+        })
+        url = urllib.request.urlopen(req)
+        image = np.asarray(bytearray(url.read()), dtype="uint8")
+        image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
+        return image
 
 
 bot.add_cog(ESRGAN(bot))
