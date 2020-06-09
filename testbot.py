@@ -32,8 +32,29 @@ bot.remove_command('help')
 
 
 @bot.check
-async def globally_block_dms(ctx):
-    return ctx.guild is not None
+async def globally_block_not_gu(ctx):
+    is_dm = ctx.guild is None
+    if is_dm:
+        print(f'DM, {ctx.author.name}')
+        await ctx.message.channel.send(
+            '{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
+        return False
+    else:
+        is_gu = ctx.guild.id == 547949405949657098
+        if not is_gu:
+            print(f'{ctx.guild.name}, {ctx.author.name}')
+            await ctx.message.channel.send(
+                '{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
+            return False
+        return True
+
+
+# @bot.event
+# async def on_command_error(ctx, error):
+#     if isinstance(error, commands.CheckFailure):
+#         return
+#     else:
+#         print(error)
 
 
 class ESRGAN(commands.Cog):
@@ -319,11 +340,13 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                             overlap = 16
 
                             if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
+
                                 # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
                                 # So, I just keep increasing the split size until its an acceptable number
                                 # TODO: Figure out why it crashes in the first place
-                                while img_height % dim < 16 or img_width % dim < 16:
-                                    dim -= 16
+                                if img_height > 16 and img_width > 16:
+                                    while img_height % dim < 16 or img_width % dim < 16:
+                                        dim -= 16
 
                                 do_split = img_height > dim or img_width > dim
                                 await sent_message.edit(content=sent_message.content + ' | ')
