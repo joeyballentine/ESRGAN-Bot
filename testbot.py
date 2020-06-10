@@ -3,6 +3,7 @@ import glob
 import math
 import os.path
 import re
+import socket
 import sys
 import urllib.request
 from io import BytesIO
@@ -38,6 +39,13 @@ config = {'split_threshold': int(os.getenv('split_threshold')),
 bot = commands.Bot(command_prefix=config['bot_prefix'],
                    description=description)
 bot.remove_command('help')
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind((socket.gethostname(), 1234))
+s.listen(5)
+
+while True:
+    clientsocket, address = s.accept()
 
 
 class ESRGAN(commands.Cog):
