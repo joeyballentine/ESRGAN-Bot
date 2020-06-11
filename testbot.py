@@ -834,7 +834,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         return downscale, filter, montage, blur_type, blur_amt, fixhist, seamless
 
     def downscale_img(self, image, filter, amt):
-        scale_percent = 1 / int(amt) * 100
+        scale_percent = 1 / float(amt) * 100
         width = int(image.shape[1] * scale_percent / 100)
         height = int(image.shape[0] * scale_percent / 100)
         dim = (width, height)
