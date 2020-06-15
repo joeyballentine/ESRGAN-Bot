@@ -70,7 +70,7 @@ class ESRGAN(commands.Cog):
         self.last_nb = None
         self.last_scale = None
         self.model = None
-        self.device = torch.device('cuda')
+        self.device = torch.device('cpu')
 
         # This group of variables pertain to the models list
         self.models = []
@@ -569,9 +569,22 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             img = img[:, :, [2, 1, 0, 3]]
         img = torch.from_numpy(np.transpose(img, (2, 0, 1))).float()
         img_LR = img.unsqueeze(0)
-        img_LR = img_LR.to(self.device)
+        # img_LR = img_LR.to(self.device)
 
-        output = self.model(img_LR).data.squeeze(
+        with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
+            traced_model = torch.jit.trace(self.model, img_LR)
+
+        # Serialize model
+        torch.jit.save(traced_model, 'traced.pt')
+
+        # Deserialize model
+        traced_model = torch.jit.load('traced.pt', map_location=torch.device('cpu'))
+
+        with torch.no_grad():
+            with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
+                traced_model = model(img_LR)
+
+        output = traced_model.data.squeeze(
             0).float().cpu().clamp_(0, 1).numpy()
         if output.shape[0] == 3:
             output = output[[2, 1, 0], :, :]
