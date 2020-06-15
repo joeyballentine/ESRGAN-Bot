@@ -582,9 +582,9 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
         with torch.no_grad():
             with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
-                traced_model = model(img_LR)
+                output = traced_model(img_LR)
 
-        output = traced_model.data.squeeze(
+        output = output.data.squeeze(
             0).float().cpu().clamp_(0, 1).numpy()
         if output.shape[0] == 3:
             output = output[[2, 1, 0], :, :]
