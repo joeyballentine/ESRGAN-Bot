@@ -575,10 +575,10 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             traced_model = torch.jit.trace(self.model, img_LR)
 
         # Serialize model
-        torch.jit.save(traced_model, 'traced.pt')
+        # torch.jit.save(traced_model, 'traced.pt')
 
         # Deserialize model
-        traced_model = torch.jit.load('traced.pt', map_location=torch.device('cpu'))
+        # traced_model = torch.jit.load('traced.pt', map_location=torch.device('cpu'))
 
         with torch.no_grad():
             with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
