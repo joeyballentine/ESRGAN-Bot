@@ -574,12 +574,6 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
             traced_model = torch.jit.trace(self.model, img_LR)
 
-        # Serialize model
-        # torch.jit.save(traced_model, 'traced.pt')
-
-        # Deserialize model
-        # traced_model = torch.jit.load('traced.pt', map_location=torch.device('cpu'))
-
         with torch.no_grad():
             with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
                 output = traced_model(img_LR)
@@ -645,10 +639,10 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
             self.model.load_state_dict(state_dict, strict=True)
             del state_dict
-            self.model.eval()
-            for k, v in self.model.named_parameters():
-                v.requires_grad = False
-            self.model = self.model.to(self.device)
+            # self.model.eval()
+            # for k, v in self.model.named_parameters():
+            #     v.requires_grad = False
+            # self.model = self.model.to(self.device)
 
         rlts = []
         for img in imgs:
