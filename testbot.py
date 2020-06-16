@@ -376,11 +376,11 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                     rlt = self.crop_seamless(rlt, scale)
 
                                 # attempts to fix broken alpha contrast caused by model
-                                if fixhist and img.ndim == 3 and img.shape[2] == 4:
-                                    # a = cv2.equalizeHist(a.astype('uint8'))
-                                    a = self.hist_match(
-                                        cv2.split(rlt)[3], cv2.split(img)[3])
-                                    rlt[:, :, 3] = a
+                                # if fixhist and img.ndim == 3 and img.shape[2] == 4:
+                                #     # a = cv2.equalizeHist(a.astype('uint8'))
+                                #     a = self.hist_match(
+                                #         cv2.split(rlt)[3], cv2.split(img)[3])
+                                #     rlt[:, :, 3] = a
                             else:
                                 await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
                                 break
@@ -644,20 +644,26 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
             if img.ndim == 3 and img.shape[2] == 4 and self.last_in_nc == 3 and self.last_out_nc == 3:
                 shape = img.shape
-                img1 = np.copy(img[:, :, :3])
-                img2 = np.copy(img[:, :, :3])
-                for c in range(3):
-                    img1[:, :, c] *= img[:, :, 3]
-                    img2[:, :, c] = (img2[:, :, c] - 1) * img[:, :, 3] + 1
+                # img1 = np.copy(img[:, :, :3])
+                # img2 = np.copy(img[:, :, :3])
+                # for c in range(3):
+                #     img1[:, :, c] *= img[:, :, 3]
+                #     img2[:, :, c] = (img2[:, :, c] - 1) * img[:, :, 3] + 1
 
+                # output1 = self.process(img1)
+                # output2 = self.process(img2)
+                # alpha = 1 - np.mean(output2-output1, axis=2)
+                # output = np.dstack((output1, alpha))
+                # shape = output1.shape
+                # divalpha = np.where(alpha < 1. / 510., 1, alpha)
+                # for c in range(shape[2]):
+                #     output[:, :, c] /= divalpha
+
+                img1 = np.copy(img[:, :, :3])
+                img2 = cv2.merge((img[:, :, 3],img[:, :, 3],img[:, :, 3]))
                 output1 = self.process(img1)
                 output2 = self.process(img2)
-                alpha = 1 - np.mean(output2-output1, axis=2)
-                output = np.dstack((output1, alpha))
-                shape = output1.shape
-                divalpha = np.where(alpha < 1. / 510., 1, alpha)
-                for c in range(shape[2]):
-                    output[:, :, c] /= divalpha
+                output = cv2.merge((output1[:,:,0], output1[:,:,1], output1[:,:,2],output2[:,:,0]))
             else:
                 if img.ndim == 2:
                     img = np.tile(np.expand_dims(img, axis=2),
@@ -811,7 +817,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         filter = cv2.INTER_CUBIC
                     elif interpolation in {'exact', 'linear_exact', 'linearexact'}:
                         filter = cv2.INTER_LINEAR_EXACT
-                    elif interpolation in {'lanczos', 'lanczos64'}:
+                    elif interpolation in {'lanczos', 'lanczos4'}:
                         filter = cv2.INTER_LANCZOS4
                     else:
                         raise ValueError(
