@@ -188,6 +188,16 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         else:
             await ctx.message.channel.send('Model {} doesn\'t exist!'.format(nickname))
 
+    @commands.command()
+    @commands.has_role(config['moderator_role_id'])
+    async def reloadmodels(self, ctx):
+        self.models = []
+        for (dirpath, dirnames, filenames) in walk('./models'):
+            self.models.extend(filenames)
+        self.models.sort()
+        self.fuzzymodels, self.aliases = self.build_aliases()
+        await ctx.message.channel.send('Done.')
+
     @removemodel.error
     @replacemodel.error
     async def not_mod_handler(self, ctx, error):
@@ -660,10 +670,11 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 #     output[:, :, c] /= divalpha
 
                 img1 = np.copy(img[:, :, :3])
-                img2 = cv2.merge((img[:, :, 3],img[:, :, 3],img[:, :, 3]))
+                img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
                 output1 = self.process(img1)
                 output2 = self.process(img2)
-                output = cv2.merge((output1[:,:,0], output1[:,:,1], output1[:,:,2],output2[:,:,0]))
+                output = cv2.merge(
+                    (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
             else:
                 if img.ndim == 2:
                     img = np.tile(np.expand_dims(img, axis=2),
