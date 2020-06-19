@@ -166,61 +166,64 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
     @commands.command()
     async def addmodel(self, ctx, url, nickname):
-        await ctx.message.channel.send('Adding model {}...'.format(nickname))
-        model_name = nickname.replace('.pth', '') + '.pth'
-        try:
-            if not os.path.exists('./models/{}'.format(model_name)):
-                urllib.request.urlretrieve(
-                    url, './models/{}'.format(model_name))
-                await ctx.message.channel.send('Model {} successfully added.'.format(nickname))
-                self.models.append(model_name)
-                self.models.sort()
-                self.fuzzymodels, self.aliases = self.build_aliases()
-            else:
-                await ctx.message.channel.send('Model {} already exists.'.format(nickname))
-        except:
-            await ctx.message.channel.send('Error adding model {}!'.format(nickname))
+        await ctx.message.channel.send('Adding models is currently disabled until I get it to work with s3 buckets')
+        # await ctx.message.channel.send('Adding model {}...'.format(nickname))
+        # model_name = nickname.replace('.pth', '') + '.pth'
+        # try:
+        #     if not os.path.exists('./models/{}'.format(model_name)):
+        #         urllib.request.urlretrieve(
+        #             url, './models/{}'.format(model_name))
+        #         await ctx.message.channel.send('Model {} successfully added.'.format(nickname))
+        #         self.models.append(model_name)
+        #         self.models.sort()
+        #         self.fuzzymodels, self.aliases = self.build_aliases()
+        #     else:
+        #         await ctx.message.channel.send('Model {} already exists.'.format(nickname))
+        # except:
+        #     await ctx.message.channel.send('Error adding model {}!'.format(nickname))
 
     @commands.command()
     @commands.has_role(config['moderator_role_id'])
     async def replacemodel(self, ctx, url, nickname):
-        await ctx.message.channel.send('Replacing model {}...'.format(nickname))
-        model_name = nickname.replace('.pth', '') + '.pth'
-        try:
-            if os.path.exists('./models/{}'.format(model_name)):
-                urllib.request.urlretrieve(
-                    url, './models/{}'.format(model_name))
-                await ctx.message.channel.send('Model {} successfully added.'.format(nickname))
-                self.models.append(model_name)
-                self.models.sort()
-                self.fuzzymodels, self.aliases = self.build_aliases()
-            else:
-                await ctx.message.channel.send('Model {} does not exist.'.format(nickname))
-        except:
-            await ctx.message.channel.send('Error replacing model {}!'.format(nickname))
+        await ctx.message.channel.send('Replacing models is currently disabled until I get it to work with s3 buckets')
+        # await ctx.message.channel.send('Replacing model {}...'.format(nickname))
+        # model_name = nickname.replace('.pth', '') + '.pth'
+        # try:
+        #     if os.path.exists('./models/{}'.format(model_name)):
+        #         urllib.request.urlretrieve(
+        #             url, './models/{}'.format(model_name))
+        #         await ctx.message.channel.send('Model {} successfully added.'.format(nickname))
+        #         self.models.append(model_name)
+        #         self.models.sort()
+        #         self.fuzzymodels, self.aliases = self.build_aliases()
+        #     else:
+        #         await ctx.message.channel.send('Model {} does not exist.'.format(nickname))
+        # except:
+        #     await ctx.message.channel.send('Error replacing model {}!'.format(nickname))
 
     @commands.command()
     @commands.has_role(config['moderator_role_id'])
     async def removemodel(self, ctx, nickname):
-        model_name = nickname.replace('.pth', '') + '.pth'
-        if model_name in self.models and os.path.exists('./models/{}'.format(model_name)):
-            self.models.remove(model_name)
-            self.models.sort()
-            os.unlink('./models/{}'.format(model_name))
-            self.fuzzymodels, self.aliases = self.build_aliases()
-            await ctx.message.channel.send('Removed model {}!'.format(nickname))
-        else:
-            await ctx.message.channel.send('Model {} doesn\'t exist!'.format(nickname))
+        await ctx.message.channel.send('Removing models is currently disabled until I get it to work with s3 buckets')
+        # model_name = nickname.replace('.pth', '') + '.pth'
+        # if model_name in self.models and os.path.exists('./models/{}'.format(model_name)):
+        #     self.models.remove(model_name)
+        #     self.models.sort()
+        #     os.unlink('./models/{}'.format(model_name))
+        #     self.fuzzymodels, self.aliases = self.build_aliases()
+        #     await ctx.message.channel.send('Removed model {}!'.format(nickname))
+        # else:
+        #     await ctx.message.channel.send('Model {} doesn\'t exist!'.format(nickname))
 
-    @commands.command()
-    @commands.has_role(config['moderator_role_id'])
-    async def reloadmodels(self, ctx):
-        self.models = []
-        for (dirpath, dirnames, filenames) in walk('./models'):
-            self.models.extend(filenames)
-        self.models.sort()
-        self.fuzzymodels, self.aliases = self.build_aliases()
-        await ctx.message.channel.send('Done.')
+    # @commands.command()
+    # @commands.has_role(config['moderator_role_id'])
+    # async def reloadmodels(self, ctx):
+    #     self.models = []
+    #     for (dirpath, dirnames, filenames) in walk('./models'):
+    #         self.models.extend(filenames)
+    #     self.models.sort()
+    #     self.fuzzymodels, self.aliases = self.build_aliases()
+    #     await ctx.message.channel.send('Done.')
 
     @removemodel.error
     @replacemodel.error
