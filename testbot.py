@@ -40,13 +40,6 @@ bot = commands.Bot(command_prefix=config['bot_prefix'],
                    description=description)
 bot.remove_command('help')
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind((socket.gethostname(), 1234))
-s.listen(5)
-
-while True:
-    clientsocket, address = s.accept()
-
 
 @bot.check
 async def globally_block_not_gu(ctx):
