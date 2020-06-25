@@ -41,22 +41,22 @@ bot = commands.Bot(command_prefix=config['bot_prefix'],
 bot.remove_command('help')
 
 
-@bot.check
-async def globally_block_not_gu(ctx):
-    is_dm = ctx.guild is None
-    if is_dm:
-        print(f'DM, {ctx.author.name}')
-        await ctx.message.channel.send(
-            '{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
-        return False
-    else:
-        is_gu = ctx.guild.id == 547949405949657098
-        if not is_gu:
-            print(f'{ctx.guild.name}, {ctx.author.name}')
-            await ctx.message.channel.send(
-                '{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
-            return False
-        return True
+# @bot.check
+# async def globally_block_not_gu(ctx):
+#     is_dm = ctx.guild is None
+#     if is_dm:
+#         print(f'DM, {ctx.author.name}')
+#         await ctx.message.channel.send(
+#             '{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
+#         return False
+#     else:
+#         is_gu = ctx.guild.id == 547949405949657098
+#         if not is_gu:
+#             print(f'{ctx.guild.name}, {ctx.author.name}')
+#             await ctx.message.channel.send(
+#                 '{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
+#             return False
+#         return True
 
 
 # @bot.event
@@ -233,7 +233,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await ctx.message.channel.send('{}, one of your images could not be downloaded.'.format(ctx.message.author.mention))
             return
 
-        await ctx.message.channel.send('Creating montage...'.format(ctx.message.author.mention))
+        await ctx.message.channel.send('Creating montage...')
 
         try:
             montage = self.make_montage(image_1, image_2, label)
