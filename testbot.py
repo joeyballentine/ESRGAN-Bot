@@ -69,6 +69,7 @@ class ESRGAN(commands.Cog):
         self.last_nf = None
         self.last_nb = None
         self.last_scale = None
+        self.last_kind = None
         self.model = None
         self.device = torch.device('cuda')
 
@@ -609,8 +610,36 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             state_dict = torch.load(model_path)
 
             if 'conv_first.weight' in state_dict:
-                print('Error: Attempted to load a new-format model')
-                sys.exit(1)
+                print('Attempting to convert and load a new-format model')
+                old_net = {}
+                items = []
+                for k, v in state_dict.items():
+                    items.append(k)
+
+                old_net['model.0.weight'] = state_dict['conv_first.weight']
+                old_net['model.0.bias'] = state_dict['conv_first.bias']
+
+                for k in items.copy():
+                    if 'RDB' in k:
+                        ori_k = k.replace('RRDB_trunk.', 'model.1.sub.')
+                        if '.weight' in k:
+                            ori_k = ori_k.replace('.weight', '.0.weight')
+                        elif '.bias' in k:
+                            ori_k = ori_k.replace('.bias', '.0.bias')
+                        old_net[ori_k] = state_dict[k]
+                        items.remove(k)
+
+                old_net['model.1.sub.23.weight'] = state_dict['trunk_conv.weight']
+                old_net['model.1.sub.23.bias'] = state_dict['trunk_conv.bias']
+                old_net['model.3.weight'] = state_dict['upconv1.weight']
+                old_net['model.3.bias'] = state_dict['upconv1.bias']
+                old_net['model.6.weight'] = state_dict['upconv2.weight']
+                old_net['model.6.bias'] = state_dict['upconv2.bias']
+                old_net['model.8.weight'] = state_dict['HRconv.weight']
+                old_net['model.8.bias'] = state_dict['HRconv.bias']
+                old_net['model.10.weight'] = state_dict['conv_last.weight']
+                old_net['model.10.bias'] = state_dict['conv_last.bias']
+                state_dict = old_net
 
             # extract model information
             scale2 = 0
@@ -639,7 +668,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
             nf = state_dict['model.0.weight'].shape[0]
 
-            if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale:
+            if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale or kind != self.last_kind:
                 if kind == 'ESRGAN':
                     self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
                                         mode='CNA', res_scale=1, upsample_mode='upconv')
@@ -651,6 +680,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 self.last_nf = nf
                 self.last_nb = nb
                 self.last_scale = upscale
+                self.last_kind = kind
 
             self.model.load_state_dict(state_dict, strict=True)
             del state_dict
