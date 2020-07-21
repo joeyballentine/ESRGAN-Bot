@@ -615,6 +615,12 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             # extract model information
             scale2 = 0
             max_part = 0
+            if 'f_HR_conv1.0.weight' in state_dict:
+                kind = 'SPSR'
+                scalemin = 4
+            else:
+                kind = 'ESRGAN'
+                scalemin = 6
             for part in list(state_dict):
                 parts = part.split('.')
                 n_parts = len(parts)
@@ -622,18 +628,24 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     nb = int(parts[3])
                 elif n_parts == 3:
                     part_num = int(parts[1])
-                    if part_num > 6 and parts[2] == 'weight':
+                    if part_num > scalemin and parts[0] == 'model' and parts[2] == 'weight':
                         scale2 += 1
                     if part_num > max_part:
                         max_part = part_num
                         out_nc = state_dict[part].shape[0]
             upscale = 2 ** scale2
             in_nc = state_dict['model.0.weight'].shape[1]
+            if kind == 'SPSR':
+                out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
             nf = state_dict['model.0.weight'].shape[0]
 
             if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale:
-                self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
-                                           mode='CNA', res_scale=1, upsample_mode='upconv')
+                if kind == 'ESRGAN':
+                    self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+                                        mode='CNA', res_scale=1, upsample_mode='upconv')
+                elif kind == 'SPSR':
+                    self.model = arch.SPSRNet(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+                                     mode='CNA', upsample_mode='upconv')
                 self.last_in_nc = in_nc
                 self.last_out_nc = out_nc
                 self.last_nf = nf
