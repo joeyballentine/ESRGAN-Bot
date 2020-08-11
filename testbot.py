@@ -18,6 +18,7 @@ from discord.ext import commands
 from fuzzywuzzy import fuzz, process
 
 import architecture as arch
+import unpickler
 
 description = '''A rewrite of the ESRGAN bot entirely in python'''
 
@@ -47,15 +48,6 @@ async def globally_block_not_gu(ctx):
                 '{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
             return False
         return True
-
-
-# @bot.event
-# async def on_command_error(ctx, error):
-#     if isinstance(error, commands.CheckFailure):
-#         return
-#     else:
-#         print(error)
-
 
 class ESRGAN(commands.Cog):
     def __init__(self, bot):
@@ -607,7 +599,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         # torch.device('cpu' if args.cpu else 'cuda')
 
         if model_path != self.last_model:
-            state_dict = torch.load(model_path)
+            state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
 
             if 'conv_first.weight' in state_dict:
                 print('Attempting to convert and load a new-format model')
@@ -908,7 +900,6 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         image = np.asarray(bytearray(url.read()), dtype="uint8")
         image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
         return image
-
 
 bot.add_cog(ESRGAN(bot))
 
