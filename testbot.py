@@ -32,22 +32,22 @@ bot = commands.Bot(command_prefix=config['bot_prefix'],
 bot.remove_command('help')
 
 
-@bot.check
-async def globally_block_not_gu(ctx):
-    is_dm = ctx.guild is None
-    if is_dm:
-        print(f'DM, {ctx.author.name}')
-        await ctx.message.channel.send(
-            '{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
-        return False
-    else:
-        is_gu = ctx.guild.id == 547949405949657098
-        if not is_gu:
-            print(f'{ctx.guild.name}, {ctx.author.name}')
-            await ctx.message.channel.send(
-                '{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
-            return False
-        return True
+# @bot.check
+# async def globally_block_not_gu(ctx):
+#     is_dm = ctx.guild is None
+#     if is_dm:
+#         print(f'DM, {ctx.author.name}')
+#         await ctx.message.channel.send(
+#             '{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
+#         return False
+#     else:
+#         is_gu = ctx.guild.id == 547949405949657098
+#         if not is_gu:
+#             print(f'{ctx.guild.name}, {ctx.author.name}')
+#             await ctx.message.channel.send(
+#                 '{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.'.format(ctx.author.mention))
+#             return False
+#         return True
 
 class ESRGAN(commands.Cog):
     def __init__(self, bot):
@@ -55,13 +55,13 @@ class ESRGAN(commands.Cog):
         self.queue = {}
 
         # This group of variables are used in the upscaling process
-        self.last_model = None
-        self.last_in_nc = None
-        self.last_out_nc = None
-        self.last_nf = None
-        self.last_nb = None
-        self.last_scale = None
-        self.last_kind = None
+        # self.last_model = None
+        # self.last_in_nc = None
+        # self.last_out_nc = None
+        # self.last_nf = None
+        # self.last_nb = None
+        # self.last_scale = None
+        # self.last_kind = None
         self.model = None
         self.device = torch.device('cpu')
 
@@ -327,86 +327,86 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     self.queue[0]['jobs'].append(
                         {'message': message, 'filename': filename, 'models': models, 'image': image})
                 while (len(self.queue[0]['jobs']) > 0):
-                    try:
-                        job = self.queue[0]['jobs'].pop(0)
-                        sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]}")
+                    #try:
+                    job = self.queue[0]['jobs'].pop(0)
+                    sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]}")
 
-                        img = job['image']
+                    img = job['image']
 
-                        # this is needed for montaging with chains
-                        og_image = img
+                    # this is needed for montaging with chains
+                    og_image = img
 
-                        for i in range(len(job['models'])):
+                    for i in range(len(job['models'])):
 
-                            img_height, img_width, img_channels = img.shape
-                            dim = config['split_threshold']
-                            overlap = 16
+                        img_height, img_width, img_channels = img.shape
+                        dim = config['split_threshold']
+                        overlap = 16
 
-                            if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
+                        if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
 
-                                # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
-                                # So, I just keep increasing the split size until its an acceptable number
-                                # TODO: Figure out why it crashes in the first place
-                                if img_height > 16 and img_width > 16:
-                                    while img_height % dim < 16 or img_width % dim < 16:
-                                        dim -= 16
+                            # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
+                            # So, I just keep increasing the split size until its an acceptable number
+                            # TODO: Figure out why it crashes in the first place
+                            if img_height > 16 and img_width > 16:
+                                while img_height % dim < 16 or img_width % dim < 16:
+                                    dim -= 16
 
-                                do_split = img_height > dim or img_width > dim
-                                await sent_message.edit(content=sent_message.content + ' | ')
+                            do_split = img_height > dim or img_width > dim
+                            await sent_message.edit(content=sent_message.content + ' | ')
 
-                                if seamless:
-                                    img = self.make_seamless(img)
+                            if seamless:
+                                img = self.make_seamless(img)
 
-                                if do_split:
-                                    await sent_message.edit(content=sent_message.content + ' Splitting...')
-                                    imgs, num_horiz, num_vert = self.split(
-                                        img, dim, overlap)
-                                else:
-                                    imgs = [img]
-
-                                await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                                rlts, scale = self.esrgan(
-                                    imgs, job['models'][i])
-
-                                if do_split:
-                                    await sent_message.edit(content=sent_message.content + ' Merging...')
-                                    rlt = self.merge(rlts, scale, overlap,
-                                                     img_height, img_width, img_channels, num_horiz, num_vert)
-                                else:
-                                    rlt = rlts[0]
-
-                                if seamless:
-                                    rlt = self.crop_seamless(rlt, scale)
-
-                                # attempts to fix broken alpha contrast caused by model
-                                # if fixhist and img.ndim == 3 and img.shape[2] == 4:
-                                #     # a = cv2.equalizeHist(a.astype('uint8'))
-                                #     a = self.hist_match(
-                                #         cv2.split(rlt)[3], cv2.split(img)[3])
-                                #     rlt[:, :, 3] = a
+                            if do_split:
+                                await sent_message.edit(content=sent_message.content + ' Splitting...')
+                                imgs, num_horiz, num_vert = self.split(
+                                    img, dim, overlap)
                             else:
-                                await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
-                                break
+                                imgs = [img]
 
-                            if len(models) > 1:
-                                img = rlt.astype('uint8')
+                            await sent_message.edit(content=sent_message.content + ' Upscaling...')
+                            rlts = self.esrgan(
+                                imgs, job['models'][i])
 
-                        await sent_message.edit(content=sent_message.content + ' Sending...')
+                            if do_split:
+                                await sent_message.edit(content=sent_message.content + ' Merging...')
+                                rlt = self.merge(rlts, 4, overlap,
+                                                    img_height, img_width, img_channels, num_horiz, num_vert)
+                            else:
+                                rlt = rlts[0]
 
-                        # converts result image to png bytestream
-                        ext = '.png'
-                        data = BytesIO(cv2.imencode('.png', rlt, [
-                            cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
-                        if (len(data.getvalue()) >= 8000000):
-                            ext = '.webp'
-                            data = BytesIO(cv2.imencode('.webp', rlt, [
-                                cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
-                        # send result through discord
-                        await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
-                        await sent_message.edit(content=sent_message.content + ' Done.')
-                    except Exception as e:
-                        print(e)
-                        await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
+                            if seamless:
+                                rlt = self.crop_seamless(rlt, 4)
+
+                            # attempts to fix broken alpha contrast caused by model
+                            # if fixhist and img.ndim == 3 and img.shape[2] == 4:
+                            #     # a = cv2.equalizeHist(a.astype('uint8'))
+                            #     a = self.hist_match(
+                            #         cv2.split(rlt)[3], cv2.split(img)[3])
+                            #     rlt[:, :, 3] = a
+                        else:
+                            await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
+                            break
+
+                        if len(models) > 1:
+                            img = rlt.astype('uint8')
+
+                    await sent_message.edit(content=sent_message.content + ' Sending...')
+
+                    # converts result image to png bytestream
+                    ext = '.png'
+                    data = BytesIO(cv2.imencode('.png', rlt, [
+                        cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
+                    if (len(data.getvalue()) >= 8000000):
+                        ext = '.webp'
+                        data = BytesIO(cv2.imencode('.webp', rlt, [
+                            cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
+                    # send result through discord
+                    await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
+                    await sent_message.edit(content=sent_message.content + ' Done.')
+                    # except Exception as e:
+                    #     print(e)
+                    #     await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
 
                     if montage:
                         try:
@@ -574,12 +574,13 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         img_LR = img.unsqueeze(0)
         # img_LR = img_LR.to(self.device)
 
-        with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
-            traced_model = torch.jit.trace(self.model, img_LR)
+        # with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
+        #     traced_model = torch.jit.trace(self.model, img_LR)
 
         with torch.no_grad():
-            with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
-                output = traced_model(img_LR)
+            # with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
+            with torch.jit.optimized_execution(True):
+                output = self.model(img_LR)
 
         output = output.data.squeeze(
             0).float().cpu().clamp_(0, 1).numpy()
@@ -605,95 +606,97 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         model_path = './models/' + model_name
         # torch.device('cpu' if args.cpu else 'cuda')
 
-        if model_path != self.last_model:
-            state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
+        # if model_path != self.last_model:
+        #     state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
 
-            if 'conv_first.weight' in state_dict:
-                print('Attempting to convert and load a new-format model')
-                old_net = {}
-                items = []
-                for k, v in state_dict.items():
-                    items.append(k)
+        #     if 'conv_first.weight' in state_dict:
+        #         print('Attempting to convert and load a new-format model')
+        #         old_net = {}
+        #         items = []
+        #         for k, v in state_dict.items():
+        #             items.append(k)
 
-                old_net['model.0.weight'] = state_dict['conv_first.weight']
-                old_net['model.0.bias'] = state_dict['conv_first.bias']
+        #         old_net['model.0.weight'] = state_dict['conv_first.weight']
+        #         old_net['model.0.bias'] = state_dict['conv_first.bias']
 
-                for k in items.copy():
-                    if 'RDB' in k:
-                        ori_k = k.replace('RRDB_trunk.', 'model.1.sub.')
-                        if '.weight' in k:
-                            ori_k = ori_k.replace('.weight', '.0.weight')
-                        elif '.bias' in k:
-                            ori_k = ori_k.replace('.bias', '.0.bias')
-                        old_net[ori_k] = state_dict[k]
-                        items.remove(k)
+        #         for k in items.copy():
+        #             if 'RDB' in k:
+        #                 ori_k = k.replace('RRDB_trunk.', 'model.1.sub.')
+        #                 if '.weight' in k:
+        #                     ori_k = ori_k.replace('.weight', '.0.weight')
+        #                 elif '.bias' in k:
+        #                     ori_k = ori_k.replace('.bias', '.0.bias')
+        #                 old_net[ori_k] = state_dict[k]
+        #                 items.remove(k)
 
-                old_net['model.1.sub.23.weight'] = state_dict['trunk_conv.weight']
-                old_net['model.1.sub.23.bias'] = state_dict['trunk_conv.bias']
-                old_net['model.3.weight'] = state_dict['upconv1.weight']
-                old_net['model.3.bias'] = state_dict['upconv1.bias']
-                old_net['model.6.weight'] = state_dict['upconv2.weight']
-                old_net['model.6.bias'] = state_dict['upconv2.bias']
-                old_net['model.8.weight'] = state_dict['HRconv.weight']
-                old_net['model.8.bias'] = state_dict['HRconv.bias']
-                old_net['model.10.weight'] = state_dict['conv_last.weight']
-                old_net['model.10.bias'] = state_dict['conv_last.bias']
-                state_dict = old_net
+        #         old_net['model.1.sub.23.weight'] = state_dict['trunk_conv.weight']
+        #         old_net['model.1.sub.23.bias'] = state_dict['trunk_conv.bias']
+        #         old_net['model.3.weight'] = state_dict['upconv1.weight']
+        #         old_net['model.3.bias'] = state_dict['upconv1.bias']
+        #         old_net['model.6.weight'] = state_dict['upconv2.weight']
+        #         old_net['model.6.bias'] = state_dict['upconv2.bias']
+        #         old_net['model.8.weight'] = state_dict['HRconv.weight']
+        #         old_net['model.8.bias'] = state_dict['HRconv.bias']
+        #         old_net['model.10.weight'] = state_dict['conv_last.weight']
+        #         old_net['model.10.bias'] = state_dict['conv_last.bias']
+        #         state_dict = old_net
 
-            # extract model information
-            scale2 = 0
-            max_part = 0
-            if 'f_HR_conv1.0.weight' in state_dict:
-                kind = 'SPSR'
-                scalemin = 4
-            else:
-                kind = 'ESRGAN'
-                scalemin = 6
-            for part in list(state_dict):
-                parts = part.split('.')
-                n_parts = len(parts)
-                if n_parts == 5 and parts[2] == 'sub':
-                    nb = int(parts[3])
-                elif n_parts == 3:
-                    part_num = int(parts[1])
-                    if part_num > scalemin and parts[0] == 'model' and parts[2] == 'weight':
-                        scale2 += 1
-                    if part_num > max_part:
-                        max_part = part_num
-                        out_nc = state_dict[part].shape[0]
-            upscale = 2 ** scale2
-            in_nc = state_dict['model.0.weight'].shape[1]
-            if kind == 'SPSR':
-                out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
-            nf = state_dict['model.0.weight'].shape[0]
+        #     # extract model information
+        #     scale2 = 0
+        #     max_part = 0
+        #     if 'f_HR_conv1.0.weight' in state_dict:
+        #         kind = 'SPSR'
+        #         scalemin = 4
+        #     else:
+        #         kind = 'ESRGAN'
+        #         scalemin = 6
+        #     for part in list(state_dict):
+        #         parts = part.split('.')
+        #         n_parts = len(parts)
+        #         if n_parts == 5 and parts[2] == 'sub':
+        #             nb = int(parts[3])
+        #         elif n_parts == 3:
+        #             part_num = int(parts[1])
+        #             if part_num > scalemin and parts[0] == 'model' and parts[2] == 'weight':
+        #                 scale2 += 1
+        #             if part_num > max_part:
+        #                 max_part = part_num
+        #                 out_nc = state_dict[part].shape[0]
+        #     upscale = 2 ** scale2
+        #     in_nc = state_dict['model.0.weight'].shape[1]
+        #     if kind == 'SPSR':
+        #         out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
+        #     nf = state_dict['model.0.weight'].shape[0]
 
-            if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale or kind != self.last_kind:
-                if kind == 'ESRGAN':
-                    self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
-                                        mode='CNA', res_scale=1, upsample_mode='upconv')
-                elif kind == 'SPSR':
-                    self.model = arch.SPSRNet(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
-                                     mode='CNA', upsample_mode='upconv')
-                self.last_in_nc = in_nc
-                self.last_out_nc = out_nc
-                self.last_nf = nf
-                self.last_nb = nb
-                self.last_scale = upscale
-                self.last_kind = kind
+        #     if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale or kind != self.last_kind:
+        #         if kind == 'ESRGAN':
+        #             self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+        #                                 mode='CNA', res_scale=1, upsample_mode='upconv')
+        #         elif kind == 'SPSR':
+        #             self.model = arch.SPSRNet(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+        #                              mode='CNA', upsample_mode='upconv')
+        #         self.last_in_nc = in_nc
+        #         self.last_out_nc = out_nc
+        #         self.last_nf = nf
+        #         self.last_nb = nb
+        #         self.last_scale = upscale
+        #         self.last_kind = kind
 
-            self.model.load_state_dict(state_dict, strict=True)
-            del state_dict
+        #     self.model.load_state_dict(state_dict, strict=True)
+        #     del state_dict
             # self.model.eval()
             # for k, v in self.model.named_parameters():
             #     v.requires_grad = False
             # self.model = self.model.to(self.device)
+
+        self.model = torch.jit.load(model_path, map_location=torch.device('cpu'))
 
         rlts = []
         for img in imgs:
             # read image
             img = img * 1. / np.iinfo(img.dtype).max
 
-            if img.ndim == 3 and img.shape[2] == 4 and self.last_in_nc == 3 and self.last_out_nc == 3:
+            if img.ndim == 3 and img.shape[2] == 4:
                 shape = img.shape
                 # img1 = np.copy(img[:, :, :3])
                 # img2 = np.copy(img[:, :, :3])
@@ -733,7 +736,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
             rlts.append(output)
         torch.cuda.empty_cache()
-        return rlts, upscale
+        return rlts
 
     # Method translated to python from BlueAmulet's original alias PR
     # Basically this allows the fuzzy matching to look at individual phrases present in the model name
