@@ -55,19 +55,19 @@ class ESRGAN(commands.Cog):
         self.queue = {}
 
         # This group of variables are used in the upscaling process
-        # self.last_model = None
-        # self.last_in_nc = None
-        # self.last_out_nc = None
-        # self.last_nf = None
-        # self.last_nb = None
-        # self.last_scale = None
-        # self.last_kind = None
+        self.last_model = None
+        self.last_in_nc = None
+        self.last_out_nc = None
+        self.last_nf = None
+        self.last_nb = None
+        self.last_scale = None
+        self.last_kind = None
         self.model = None
         self.device = torch.device('cpu')
 
         # This group of variables pertain to the models list
         self.models = []
-        for (dirpath, dirnames, filenames) in walk('./models'):
+        for (dirpath, dirnames, filenames) in walk('C:/Users/Joey/Desktop/TorchScript Tests/converted'):
             self.models.extend(filenames)
             break
         self.fuzzymodels, self.aliases = self.build_aliases()
@@ -365,25 +365,18 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                 imgs = [img]
 
                             await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                            rlts = self.esrgan(
+                            rlts, scale = self.esrgan(
                                 imgs, job['models'][i])
 
                             if do_split:
                                 await sent_message.edit(content=sent_message.content + ' Merging...')
-                                rlt = self.merge(rlts, 4, overlap,
+                                rlt = self.merge(rlts, scale, overlap,
                                                     img_height, img_width, img_channels, num_horiz, num_vert)
                             else:
                                 rlt = rlts[0]
 
                             if seamless:
-                                rlt = self.crop_seamless(rlt, 4)
-
-                            # attempts to fix broken alpha contrast caused by model
-                            # if fixhist and img.ndim == 3 and img.shape[2] == 4:
-                            #     # a = cv2.equalizeHist(a.astype('uint8'))
-                            #     a = self.hist_match(
-                            #         cv2.split(rlt)[3], cv2.split(img)[3])
-                            #     rlt[:, :, 3] = a
+                                rlt = self.crop_seamless(rlt, scale)
                         else:
                             await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
                             break
@@ -404,9 +397,9 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     # send result through discord
                     await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
                     await sent_message.edit(content=sent_message.content + ' Done.')
-                    # except Exception as e:
-                    #     print(e)
-                    #     await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
+                    #except Exception as e:
+                    #    print(e)
+                    #    await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
 
                     if montage:
                         try:
@@ -603,84 +596,86 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 Returns:
                         rlts (array): The processed images
         '''
-        model_path = './models/' + model_name
+        model_path = 'C:/Users/Joey/Desktop/TorchScript Tests/converted/' + model_name
+        self.model = torch.jit.load(model_path, map_location=torch.device('cpu'))
+        state_dict = self.model.state_dict()
         # torch.device('cpu' if args.cpu else 'cuda')
 
-        # if model_path != self.last_model:
-        #     state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
+        if model_path != self.last_model:
+            # state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
 
-        #     if 'conv_first.weight' in state_dict:
-        #         print('Attempting to convert and load a new-format model')
-        #         old_net = {}
-        #         items = []
-        #         for k, v in state_dict.items():
-        #             items.append(k)
+            if 'conv_first.weight' in state_dict:
+                print('Attempting to convert and load a new-format model')
+                old_net = {}
+                items = []
+                for k, v in state_dict.items():
+                    items.append(k)
 
-        #         old_net['model.0.weight'] = state_dict['conv_first.weight']
-        #         old_net['model.0.bias'] = state_dict['conv_first.bias']
+                old_net['model.0.weight'] = state_dict['conv_first.weight']
+                old_net['model.0.bias'] = state_dict['conv_first.bias']
 
-        #         for k in items.copy():
-        #             if 'RDB' in k:
-        #                 ori_k = k.replace('RRDB_trunk.', 'model.1.sub.')
-        #                 if '.weight' in k:
-        #                     ori_k = ori_k.replace('.weight', '.0.weight')
-        #                 elif '.bias' in k:
-        #                     ori_k = ori_k.replace('.bias', '.0.bias')
-        #                 old_net[ori_k] = state_dict[k]
-        #                 items.remove(k)
+                for k in items.copy():
+                    if 'RDB' in k:
+                        ori_k = k.replace('RRDB_trunk.', 'model.1.sub.')
+                        if '.weight' in k:
+                            ori_k = ori_k.replace('.weight', '.0.weight')
+                        elif '.bias' in k:
+                            ori_k = ori_k.replace('.bias', '.0.bias')
+                        old_net[ori_k] = state_dict[k]
+                        items.remove(k)
 
-        #         old_net['model.1.sub.23.weight'] = state_dict['trunk_conv.weight']
-        #         old_net['model.1.sub.23.bias'] = state_dict['trunk_conv.bias']
-        #         old_net['model.3.weight'] = state_dict['upconv1.weight']
-        #         old_net['model.3.bias'] = state_dict['upconv1.bias']
-        #         old_net['model.6.weight'] = state_dict['upconv2.weight']
-        #         old_net['model.6.bias'] = state_dict['upconv2.bias']
-        #         old_net['model.8.weight'] = state_dict['HRconv.weight']
-        #         old_net['model.8.bias'] = state_dict['HRconv.bias']
-        #         old_net['model.10.weight'] = state_dict['conv_last.weight']
-        #         old_net['model.10.bias'] = state_dict['conv_last.bias']
-        #         state_dict = old_net
+                old_net['model.1.sub.23.weight'] = state_dict['trunk_conv.weight']
+                old_net['model.1.sub.23.bias'] = state_dict['trunk_conv.bias']
+                old_net['model.3.weight'] = state_dict['upconv1.weight']
+                old_net['model.3.bias'] = state_dict['upconv1.bias']
+                old_net['model.6.weight'] = state_dict['upconv2.weight']
+                old_net['model.6.bias'] = state_dict['upconv2.bias']
+                old_net['model.8.weight'] = state_dict['HRconv.weight']
+                old_net['model.8.bias'] = state_dict['HRconv.bias']
+                old_net['model.10.weight'] = state_dict['conv_last.weight']
+                old_net['model.10.bias'] = state_dict['conv_last.bias']
+                state_dict = old_net
 
-        #     # extract model information
-        #     scale2 = 0
-        #     max_part = 0
-        #     if 'f_HR_conv1.0.weight' in state_dict:
-        #         kind = 'SPSR'
-        #         scalemin = 4
-        #     else:
-        #         kind = 'ESRGAN'
-        #         scalemin = 6
-        #     for part in list(state_dict):
-        #         parts = part.split('.')
-        #         n_parts = len(parts)
-        #         if n_parts == 5 and parts[2] == 'sub':
-        #             nb = int(parts[3])
-        #         elif n_parts == 3:
-        #             part_num = int(parts[1])
-        #             if part_num > scalemin and parts[0] == 'model' and parts[2] == 'weight':
-        #                 scale2 += 1
-        #             if part_num > max_part:
-        #                 max_part = part_num
-        #                 out_nc = state_dict[part].shape[0]
-        #     upscale = 2 ** scale2
-        #     in_nc = state_dict['model.0.weight'].shape[1]
-        #     if kind == 'SPSR':
-        #         out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
-        #     nf = state_dict['model.0.weight'].shape[0]
+            # extract model information
+            scale2 = 0
+            max_part = 0
+            if 'f_HR_conv1.0.weight' in state_dict:
+                kind = 'SPSR'
+                scalemin = 4
+            else:
+                kind = 'ESRGAN'
+                scalemin = 6
+            for part in list(state_dict):
+                parts = part.split('.')
+                n_parts = len(parts)
+                if n_parts == 5 and parts[2] == 'sub':
+                    nb = int(parts[3])
+                elif n_parts == 3:
+                    part_num = int(parts[1])
+                    if part_num > scalemin and parts[0] == 'model' and parts[2] == 'weight':
+                        scale2 += 1
+                    if part_num > max_part:
+                        max_part = part_num
+                        out_nc = state_dict[part].shape[0]
+            upscale = 2 ** scale2
+            in_nc = state_dict['model.0.weight'].shape[1]
+            if kind == 'SPSR':
+                out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
+            nf = state_dict['model.0.weight'].shape[0]
 
-        #     if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale or kind != self.last_kind:
-        #         if kind == 'ESRGAN':
-        #             self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
-        #                                 mode='CNA', res_scale=1, upsample_mode='upconv')
-        #         elif kind == 'SPSR':
-        #             self.model = arch.SPSRNet(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
-        #                              mode='CNA', upsample_mode='upconv')
-        #         self.last_in_nc = in_nc
-        #         self.last_out_nc = out_nc
-        #         self.last_nf = nf
-        #         self.last_nb = nb
-        #         self.last_scale = upscale
-        #         self.last_kind = kind
+            if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale or kind != self.last_kind:
+                # if kind == 'ESRGAN':
+                #     self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+                #                         mode='CNA', res_scale=1, upsample_mode='upconv')
+                # elif kind == 'SPSR':
+                #     self.model = arch.SPSRNet(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+                #                      mode='CNA', upsample_mode='upconv')
+                self.last_in_nc = in_nc
+                self.last_out_nc = out_nc
+                self.last_nf = nf
+                self.last_nb = nb
+                self.last_scale = upscale
+                self.last_kind = kind
 
         #     self.model.load_state_dict(state_dict, strict=True)
         #     del state_dict
@@ -689,14 +684,14 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             #     v.requires_grad = False
             # self.model = self.model.to(self.device)
 
-        self.model = torch.jit.load(model_path, map_location=torch.device('cpu'))
+        
 
         rlts = []
         for img in imgs:
             # read image
             img = img * 1. / np.iinfo(img.dtype).max
 
-            if img.ndim == 3 and img.shape[2] == 4:
+            if img.ndim == 3 and img.shape[2] == 4 and self.last_in_nc == 3 and self.last_out_nc == 3:
                 shape = img.shape
                 # img1 = np.copy(img[:, :, :3])
                 # img2 = np.copy(img[:, :, :3])
@@ -736,7 +731,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
             rlts.append(output)
         torch.cuda.empty_cache()
-        return rlts
+        return rlts, upscale
 
     # Method translated to python from BlueAmulet's original alias PR
     # Basically this allows the fuzzy matching to look at individual phrases present in the model name
