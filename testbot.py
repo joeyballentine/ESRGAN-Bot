@@ -67,7 +67,7 @@ class ESRGAN(commands.Cog):
 
         # This group of variables pertain to the models list
         self.models = []
-        for (dirpath, dirnames, filenames) in walk('C:/Users/Joey/Desktop/TorchScript Tests/converted'):
+        for (dirpath, dirnames, filenames) in walk('./models/'):
             self.models.extend(filenames)
             break
         self.fuzzymodels, self.aliases = self.build_aliases()
@@ -596,7 +596,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 Returns:
                         rlts (array): The processed images
         '''
-        model_path = 'C:/Users/Joey/Desktop/TorchScript Tests/converted/' + model_name
+        model_path = './models/' + model_name
         self.model = torch.jit.load(model_path, map_location=torch.device('cpu'))
         state_dict = self.model.state_dict()
         # torch.device('cpu' if args.cpu else 'cuda')
