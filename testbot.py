@@ -571,8 +571,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         #     traced_model = torch.jit.trace(self.model, img_LR)
 
         with torch.no_grad():
-            # with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
-            with torch.jit.optimized_execution(True):
+            with torch.jit.optimized_execution(True, {'target_device': 'eia:0'}):
+            # with torch.jit.optimized_execution(True):
                 output = self.model(img_LR)
 
         output = output.data.squeeze(
