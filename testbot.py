@@ -7,6 +7,7 @@ import sys
 import urllib.request
 from io import BytesIO
 from os import walk
+from collections import OrderedDict
 
 import cv2
 import discord
@@ -322,91 +323,94 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     'jobs': []
                 }
                 for model_job in model_jobs:
-                    models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
-                        0]] for model in model_job.split('>')[:3]]
+                    if ':' in model_job or '&' in model_job:
+                        models = model_job.split('>')[:3]
+                    else:
+                        models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
+                            0]] for model in model_job.split('>')[:3]]
                     self.queue[0]['jobs'].append(
                         {'message': message, 'filename': filename, 'models': models, 'image': image})
                 while (len(self.queue[0]['jobs']) > 0):
-                    try:
-                        job = self.queue[0]['jobs'].pop(0)
-                        sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]}")
+                    #try:
+                    job = self.queue[0]['jobs'].pop(0)
+                    sent_message = await message.channel.send(f"{job['filename']} is being upscaled using {', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]}")
 
-                        img = job['image']
+                    img = job['image']
 
-                        # this is needed for montaging with chains
-                        og_image = img
+                    # this is needed for montaging with chains
+                    og_image = img
 
-                        for i in range(len(job['models'])):
+                    for i in range(len(job['models'])):
 
-                            img_height, img_width, img_channels = img.shape
-                            dim = config['split_threshold']
-                            overlap = 16
+                        img_height, img_width, img_channels = img.shape
+                        dim = config['split_threshold']
+                        overlap = 16
 
-                            if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
+                        if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
 
-                                # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
-                                # So, I just keep increasing the split size until its an acceptable number
-                                # TODO: Figure out why it crashes in the first place
-                                if img_height > 16 and img_width > 16:
-                                    while img_height % dim < 16 or img_width % dim < 16:
-                                        dim -= 16
+                            # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
+                            # So, I just keep increasing the split size until its an acceptable number
+                            # TODO: Figure out why it crashes in the first place
+                            if img_height > 16 and img_width > 16:
+                                while img_height % dim < 16 or img_width % dim < 16:
+                                    dim -= 16
 
-                                do_split = img_height > dim or img_width > dim
-                                await sent_message.edit(content=sent_message.content + ' | ')
+                            do_split = img_height > dim or img_width > dim
+                            await sent_message.edit(content=sent_message.content + ' | ')
 
-                                if seamless:
-                                    img = self.make_seamless(img)
+                            if seamless:
+                                img = self.make_seamless(img)
 
-                                if do_split:
-                                    await sent_message.edit(content=sent_message.content + ' Splitting...')
-                                    imgs, num_horiz, num_vert = self.split(
-                                        img, dim, overlap)
-                                else:
-                                    imgs = [img]
-
-                                await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                                rlts, scale = self.esrgan(
-                                    imgs, job['models'][i])
-
-                                if do_split:
-                                    await sent_message.edit(content=sent_message.content + ' Merging...')
-                                    rlt = self.merge(rlts, scale, overlap,
-                                                     img_height, img_width, img_channels, num_horiz, num_vert)
-                                else:
-                                    rlt = rlts[0]
-
-                                if seamless:
-                                    rlt = self.crop_seamless(rlt, scale)
-
-                                # attempts to fix broken alpha contrast caused by model
-                                # if fixhist and img.ndim == 3 and img.shape[2] == 4:
-                                #     # a = cv2.equalizeHist(a.astype('uint8'))
-                                #     a = self.hist_match(
-                                #         cv2.split(rlt)[3], cv2.split(img)[3])
-                                #     rlt[:, :, 3] = a
+                            if do_split:
+                                await sent_message.edit(content=sent_message.content + ' Splitting...')
+                                imgs, num_horiz, num_vert = self.split(
+                                    img, dim, overlap)
                             else:
-                                await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
-                                break
+                                imgs = [img]
 
-                            if len(models) > 1:
-                                img = rlt.astype('uint8')
+                            await sent_message.edit(content=sent_message.content + ' Upscaling...')
+                            rlts, scale = self.esrgan(
+                                imgs, job['models'][i])
 
-                        await sent_message.edit(content=sent_message.content + ' Sending...')
+                            if do_split:
+                                await sent_message.edit(content=sent_message.content + ' Merging...')
+                                rlt = self.merge(rlts, scale, overlap,
+                                                    img_height, img_width, img_channels, num_horiz, num_vert)
+                            else:
+                                rlt = rlts[0]
 
-                        # converts result image to png bytestream
-                        ext = '.png'
-                        data = BytesIO(cv2.imencode('.png', rlt, [
-                            cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
-                        if (len(data.getvalue()) >= 8000000):
-                            ext = '.webp'
-                            data = BytesIO(cv2.imencode('.webp', rlt, [
-                                cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
-                        # send result through discord
-                        await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
-                        await sent_message.edit(content=sent_message.content + ' Done.')
-                    except Exception as e:
-                        print(e)
-                        await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
+                            if seamless:
+                                rlt = self.crop_seamless(rlt, scale)
+
+                            # attempts to fix broken alpha contrast caused by model
+                            # if fixhist and img.ndim == 3 and img.shape[2] == 4:
+                            #     # a = cv2.equalizeHist(a.astype('uint8'))
+                            #     a = self.hist_match(
+                            #         cv2.split(rlt)[3], cv2.split(img)[3])
+                            #     rlt[:, :, 3] = a
+                        else:
+                            await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
+                            break
+
+                        if len(models) > 1:
+                            img = rlt.astype('uint8')
+
+                    await sent_message.edit(content=sent_message.content + ' Sending...')
+
+                    # converts result image to png bytestream
+                    ext = '.png'
+                    data = BytesIO(cv2.imencode('.png', rlt, [
+                        cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring())
+                    if (len(data.getvalue()) >= 8000000):
+                        ext = '.webp'
+                        data = BytesIO(cv2.imencode('.webp', rlt, [
+                            cv2.IMWRITE_WEBP_QUALITY, 64])[1].tostring())
+                    # send result through discord
+                    await job['message'].channel.send('{}, your image has been upscaled using {}.'.format(job['message'].author.mention, ', '.join(job['models']) if len(job['models']) > 1 else job['models'][0]), file=discord.File(data, job['filename'].split('.')[0] + ext))
+                    await sent_message.edit(content=sent_message.content + ' Done.')
+                   #except Exception as e:
+                   #    print(e)
+                   #    await job['message'].channel.send('{}, there was an error upscaling your image.'.format(job['message'].author.mention))
 
                     if montage:
                         try:
@@ -595,11 +599,25 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 Returns:
                         rlts (array): The processed images
         '''
-        model_path = './models/' + model_name
+        #model_path = './models/' + model_name
         # torch.device('cpu' if args.cpu else 'cuda')
 
-        if model_path != self.last_model:
-            state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
+        if model_name != self.last_model:
+            if ':' in model_name or '&' in model_name: # interpolating OTF, example: 4xBox:25&4xPSNR:75
+                print(model_name)
+                interps = model_name.split('&')[:2]
+                print(interps)
+                print(interps[0].split(':')[1])
+                model_1 = torch.load('./models/' + interps[0].split(':')[0], pickle_module=unpickler.RestrictedUnpickle)
+                model_2 = torch.load('./models/' + interps[1].split(':')[0], pickle_module=unpickler.RestrictedUnpickle)
+                state_dict = OrderedDict()
+                for k, v_1 in model_1.items():
+                    v_2 = model_2[k]
+                    state_dict[k] = (int(interps[0].split(':')[1]) / 100) * v_1 + (int(interps[1].split(':')[1]) / 100) * v_2
+            else:
+                model_path = './models/' + model_name
+                state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
+            
 
             if 'conv_first.weight' in state_dict:
                 print('Attempting to convert and load a new-format model')
