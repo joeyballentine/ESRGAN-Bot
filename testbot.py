@@ -604,10 +604,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
         if model_name != self.last_model:
             if ':' in model_name or '&' in model_name: # interpolating OTF, example: 4xBox:25&4xPSNR:75
-                print(model_name)
                 interps = model_name.split('&')[:2]
-                print(interps)
-                print(interps[0].split(':')[1])
                 model_1 = torch.load('./models/' + interps[0].split(':')[0], pickle_module=unpickler.RestrictedUnpickle)
                 model_2 = torch.load('./models/' + interps[1].split(':')[0], pickle_module=unpickler.RestrictedUnpickle)
                 state_dict = OrderedDict()
