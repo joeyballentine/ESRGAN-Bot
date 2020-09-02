@@ -386,10 +386,12 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         if len(models) > 1:
                             img = rlt.astype('uint8')
 
+                        elapsed_time = time.process_time() - t
+                        print(f'elapsed time: {elapsed_time}')
+
                     await sent_message.edit(content=sent_message.content + ' Sending...')
 
-                    elapsed_time = time.process_time() - t
-                    print(f'elapsed time: {elapsed_time}')
+                    
 
                     # converts result image to png bytestream
                     ext = '.png'
