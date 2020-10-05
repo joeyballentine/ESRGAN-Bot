@@ -290,12 +290,12 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             return
 
         resize_scale = self.check_resized(image)
-        if resize_scale and not downscale:
+        if resize_scale > 1 and not downscale:
             await message.channel.send('{}, it looks like you are trying to upscale a resized image. Consider downscaling this image by {} with nearest neighbor first..'.format(message.author.mention, resize_scale))
         
         if downscale:
             try:
-                if resize_scale and downscale == 'auto':
+                if resize_scale > 1 and downscale == 'auto':
                     image = self.downscale_img(image, cv2.INTER_NEAREST, resize_scale)
                 else:
                     image = self.downscale_img(image, filter, downscale)
@@ -923,7 +923,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         image = np.asarray(bytearray(url.read()), dtype="uint8")
         image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
         return image
-
+    
     def check_resized(self, img):
         h, w, c = img.shape
         if c == 4:
@@ -932,18 +932,18 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             img = img[y:y+h, x:x+w]
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
             h, w, c = img.shape
-        sizes = [16, 14, 12, 10, 8, 6, 4, 3, 2]
+        sizes = [7, 5, 3, 2]
         og_img = img
         for size in sizes:
             img = og_img
-            img = cv2.resize(img, None, fx=1/size, fy=1/size, interpolation=cv2.INTER_NEAREST)
-            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_NEAREST)
-
+            small_img = cv2.resize(img, None, fx=1/size, fy=1/size, interpolation=cv2.INTER_NEAREST)
+            img = cv2.resize(small_img, (w, h), interpolation=cv2.INTER_NEAREST)
             # Not sure if its better to have tolerance but I'm going with it for now
             # same = np.array_equal(og_img, img)
             same = np.allclose(og_img, img)
             if same:
-                return size
+                return size * self.check_resized(small_img)
+        return 1
 
 bot.add_cog(ESRGAN(bot))
 
