@@ -289,11 +289,19 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
             return
 
+        resize_scale = self.check_resized(image)
+        if resize_scale and not downscale:
+            await message.channel.send('{}, it looks like you are trying to upscale a resized image. Consider downscaling this image by {} with nearest neighbor first..'.format(message.author.mention, resize_scale))
+        
         if downscale:
             try:
-                image = self.downscale_img(image, filter, downscale)
+                if resize_scale and downscale == 'auto':
+                    image = self.downscale_img(image, cv2.INTER_NEAREST, resize_scale)
+                else:
+                    image = self.downscale_img(image, filter, downscale)
             except:
                 await message.channel.send('{}, your image could not be downscaled.'.format(message.author.mention))
+
         if blur_type:
             try:
                 if not blur_amt:
@@ -363,18 +371,18 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                                 if do_split:
                                     await sent_message.edit(content=sent_message.content + ' Splitting...')
-                                    imgs, num_horiz, num_vert = self.split(
+                                    imgs, num_horiz, num_vert = await self.split(
                                         img, dim, overlap)
                                 else:
                                     imgs = [img]
 
                                 await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                                rlts, scale = self.esrgan(
+                                rlts, scale = await self.esrgan(
                                     imgs, job['models'][i])
 
                                 if do_split:
                                     await sent_message.edit(content=sent_message.content + ' Merging...')
-                                    rlt = self.merge(rlts, scale, overlap,
+                                    rlt = await self.merge(rlts, scale, overlap,
                                                         img_height, img_width, img_channels, num_horiz, num_vert)
                                 else:
                                     rlt = rlts[0]
@@ -438,7 +446,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         else:
             await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
 
-    def split(self, img, dim, overlap):
+    async def split(self, img, dim, overlap):
         '''
         Creates an array of equal length image chunks to use for upscaling
 
@@ -464,7 +472,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         return imgs, num_horiz, num_vert
 
     # This method is a somewhat modified version of BlueAmulet's original pymerge script that is able to use my split chunks
-    def merge(self, rlts, scale, overlap, img_height, img_width, img_channels, num_horiz, num_vert):
+    async def merge(self, rlts, scale, overlap, img_height, img_width, img_channels, num_horiz, num_vert):
         '''
         Merges the image chunks back together
 
@@ -560,7 +568,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         return rlt
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
-    def process(self, img):
+    async def process(self, img):
         '''
         Does the processing part of ESRGAN. This method only exists because the same block of code needs to be ran twice for images with transparency.
 
@@ -588,7 +596,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         return output
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
-    def esrgan(self, imgs, model_name):
+    async def esrgan(self, imgs, model_name):
         '''
         Runs ESRGAN on all the images passed in with the specified model
 
@@ -720,8 +728,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                 img1 = np.copy(img[:, :, :3])
                 img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
-                output1 = self.process(img1)
-                output2 = self.process(img2)
+                output1 = await self.process(img1)
+                output2 = await self.process(img2)
                 output = cv2.merge(
                     (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
             else:
@@ -734,7 +742,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 # pad with solid alpha channel
                 elif img.shape[2] == 3 and self.last_in_nc == 4:
                     img = np.dstack((img, np.full(img.shape[:-1], 1.)))
-                output = self.process(img)
+                output = await self.process(img)
 
             output = (output * 255.0).round()
             # if output.ndim == 3 and output.shape[2] == 4:
@@ -861,7 +869,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             arg = arg.lower()
             if arg in {'-downscale', '-d'}:
                 try:
-                    downscale = float(args[index + 1])
+                    downscale = float(args[index + 1]) if args[index + 1] != 'auto' else 'auto'
                 except:
                     raise ValueError('Downscale value not specified.')
             elif arg in {'-filter', '-f'}:
@@ -915,6 +923,27 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         image = np.asarray(bytearray(url.read()), dtype="uint8")
         image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
         return image
+
+    def check_resized(self, img):
+        h, w, c = img.shape
+        if c == 4:
+            b, g, r, a = cv2.split(img)
+            x,y,w,h = cv2.boundingRect(a)
+            img = img[y:y+h, x:x+w]
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            h, w, c = img.shape
+        sizes = [16, 14, 12, 10, 8, 6, 4, 3, 2]
+        og_img = img
+        for size in sizes:
+            img = og_img
+            img = cv2.resize(img, None, fx=1/size, fy=1/size, interpolation=cv2.INTER_NEAREST)
+            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_NEAREST)
+
+            # Not sure if its better to have tolerance but I'm going with it for now
+            # same = np.array_equal(og_img, img)
+            same = np.allclose(og_img, img)
+            if same:
+                return size
 
 bot.add_cog(ESRGAN(bot))
 
