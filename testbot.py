@@ -8,18 +8,19 @@ import sys
 import urllib.request
 from io import BytesIO
 from os import walk
+from collections import OrderedDict
 
 import cv2
 import discord
-import fuzzywuzzy
 import numpy as np
 import torch
 import yaml
 from discord.ext import commands
 from fuzzywuzzy import fuzz, process
 
-import architecture as arch
-import boto3
+import utils.architecture as arch
+import utils.unpickler as unpickler
+import utils.imgops as ops
 
 boto_kwargs = {
     "aws_access_key_id": os.getenv('AWSAccessKeyId'),
@@ -58,15 +59,6 @@ bot.remove_command('help')
 #             return False
 #         return True
 
-
-# @bot.event
-# async def on_command_error(ctx, error):
-#     if isinstance(error, commands.CheckFailure):
-#         return
-#     else:
-#         print(error)
-
-
 class ESRGAN(commands.Cog):
     def __init__(self, bot):
 
@@ -86,6 +78,7 @@ class ESRGAN(commands.Cog):
         self.last_nf = None
         self.last_nb = None
         self.last_scale = None
+        self.last_kind = None
         self.model = None
         self.device = torch.device('cpu')
 
@@ -303,7 +296,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             return
 
         try:
-            downscale, filter, montage, blur_type, blur_amt, fixhist, seamless = self.parse_flags(
+            downscale, filter, montage, blur_type, blur_amt, fixhist, seamless = await self.parse_flags(
                 args, message)
         except ValueError as e:
             await message.channel.send(e)
@@ -315,11 +308,19 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
             return
 
+        resize_scale = await self.check_resized(image)
+        if resize_scale > 1 and not downscale:
+            await message.channel.send('{}, it looks like you are trying to upscale a resized image. Consider downscaling this image by {} with nearest neighbor first..'.format(message.author.mention, resize_scale))
+        
         if downscale:
             try:
-                image = self.downscale_img(image, filter, downscale)
+                if resize_scale > 1 and downscale == 'auto':
+                    image = self.downscale_img(image, cv2.INTER_NEAREST, resize_scale)
+                else:
+                    image = self.downscale_img(image, filter, downscale)
             except:
                 await message.channel.send('{}, your image could not be downscaled.'.format(message.author.mention))
+
         if blur_type:
             try:
                 if not blur_amt:
@@ -349,8 +350,11 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     'jobs': []
                 }
                 for model_job in model_jobs:
-                    models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
-                        0]] for model in model_job.split('>')[:3]]
+                    if ':' in model_job or '&' in model_job:
+                        models = model_job.split('>')[:3]
+                    else:
+                        models = [self.aliases[process.extractOne(model.replace('.pth', ''), self.fuzzymodels)[
+                            0]] for model in model_job.split('>')[:3]]
                     self.queue[0]['jobs'].append(
                         {'message': message, 'filename': filename, 'models': models, 'image': image})
                 while (len(self.queue[0]['jobs']) > 0):
@@ -366,19 +370,16 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         for i in range(len(job['models'])):
 
                             img_height, img_width, img_channels = img.shape
-                            dim = config['split_threshold']
-                            overlap = 16
 
                             if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
 
-                                # For some reason if either dim of the image is a multiple (or close) of the split size it crashes
-                                # So, I just keep increasing the split size until its an acceptable number
-                                # TODO: Figure out why it crashes in the first place
-                                if img_height > 16 and img_width > 16:
-                                    while img_height % dim < 16 or img_width % dim < 16:
-                                        dim -= 16
+                                if img_height > config['split_threshold'] or img_width > config['split_threshold']:
+                                    dim = min(img_height, img_width, config['split_threshold'])
+                                    do_split = True
+                                    overlap = 16
+                                else:
+                                    do_split = False
 
-                                do_split = img_height > dim or img_width > dim
                                 await sent_message.edit(content=sent_message.content + ' | ')
 
                                 if seamless:
@@ -386,31 +387,27 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                                 if do_split:
                                     await sent_message.edit(content=sent_message.content + ' Splitting...')
-                                    imgs, num_horiz, num_vert = self.split(
-                                        img, dim, overlap)
+                                    tensor_img = await ops.np2tensor(img)
+                                    imgs = await ops.patchify_tensor(tensor_img, dim, overlap=overlap)
+                                    imgs = [await ops.tensor2np(img) for img in imgs]
                                 else:
                                     imgs = [img]
 
                                 await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                                rlts, scale = self.esrgan(
+                                rlts, scale = await self.esrgan(
                                     imgs, job['models'][i])
 
                                 if do_split:
                                     await sent_message.edit(content=sent_message.content + ' Merging...')
-                                    rlt = self.merge(rlts, scale, overlap,
-                                                     img_height, img_width, img_channels, num_horiz, num_vert)
+                                    rlts = [await ops.np2tensor(rlt.astype('uint8')) for rlt in rlts]
+                                    rlts = torch.cat(rlts, 0)
+                                    rlt_tensor = await ops.recompose_tensor(rlts, img_height * scale, img_width * scale, overlap=overlap * scale)
+                                    rlt = await ops.tensor2np(rlt_tensor)
                                 else:
                                     rlt = rlts[0]
 
                                 if seamless:
                                     rlt = self.crop_seamless(rlt, scale)
-
-                                # attempts to fix broken alpha contrast caused by model
-                                # if fixhist and img.ndim == 3 and img.shape[2] == 4:
-                                #     # a = cv2.equalizeHist(a.astype('uint8'))
-                                #     a = self.hist_match(
-                                #         cv2.split(rlt)[3], cv2.split(img)[3])
-                                #     rlt[:, :, 3] = a
                             else:
                                 await message.channel.send('Unable to continue chain due to size cutoff ({}).'.format(config['img_size_cutoff']))
                                 break
@@ -461,129 +458,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         else:
             await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
 
-    def split(self, img, dim, overlap):
-        '''
-        Creates an array of equal length image chunks to use for upscaling
-
-                Parameters:
-                        img (array): Numpy image array 
-                        dim (int): Number to use for length and height of image chunks
-                        overlap (int): The amount of overlap between chunks
-
-                Returns:
-                        imgs (array): Array of numpy image "chunks"
-                        num_horiz (int): Number of horizontal chunks
-                        num_vert (int): Number of vertical chunks
-        '''
-        img_height, img_width, img_channels = img.shape
-        num_horiz = math.ceil(img_width / dim)
-        num_vert = math.ceil(img_height / dim)
-        imgs = []
-        for i in range(num_vert):
-            for j in range(num_horiz):
-                tile = img[i * dim:i * dim + dim + overlap,
-                           j * dim:j * dim + dim + overlap].copy()
-                imgs.append(tile)
-        return imgs, num_horiz, num_vert
-
-    # This method is a somewhat modified version of BlueAmulet's original pymerge script that is able to use my split chunks
-    def merge(self, rlts, scale, overlap, img_height, img_width, img_channels, num_horiz, num_vert):
-        '''
-        Merges the image chunks back together
-
-                Parameters:
-                        rlts (array): The resulting images from ESRGAN 
-                        scale (int): The scale of the model that was applied
-                        overlap (int): The amount of overlap between chunks
-                        img_height (int): The height of the original image
-                        img_width (int): The width of the original image
-                        num_horiz (int): Number of horizontal chunks
-                        num_vert (int): Number of vertical chunks
-
-                Returns:
-                        rlt (array): Numpy image array of the resulting merged image
-        '''
-        rlt_overlap = int(overlap * scale)
-
-        rlts_fin = [[None for x in range(num_horiz)]
-                    for y in range(num_vert)]
-
-        rlt = np.zeros((img_height * scale,
-                        img_width * scale, img_channels))
-
-        c = 0
-        for tY in range(num_vert):
-            for tX in range(num_horiz):
-                img = rlts[tY*num_horiz+tX]
-                shape = img.shape
-                c = max(c, shape[2])
-                rlts_fin[tY][tX] = img
-
-        for tY in range(num_vert):
-            for tX in range(num_horiz):
-                img = rlts_fin[tY][tX]
-                if img.shape[2] == 3 and c == 4:  # pad with solid alpha channel
-                    img = np.dstack((img, np.full(img.shape[:-1], 1.)))
-                    rlts_fin[tY][tX] = img
-                shape = img.shape
-                # Fade out edges
-                # Left edge
-                if tX > 0:
-                    for x in range(rlt_overlap):
-                        img[:, x] *= ((x + 1)/(rlt_overlap + 1))
-                # Top edge
-                if tY > 0:
-                    for y in range(rlt_overlap):
-                        img[y, :] *= ((y + 1)/(rlt_overlap + 1))
-                # Right edge
-                if tX < num_horiz - 1:
-                    for x in range(rlt_overlap):
-                        iX = x + shape[1] - rlt_overlap
-                        img[:, iX] *= ((rlt_overlap - x) /
-                                       (rlt_overlap + 1))
-                # Bottom edge
-                if tY < num_vert - 1:
-                    for y in range(rlt_overlap):
-                        iY = y + shape[0] - rlt_overlap
-                        img[iY, :] *= ((rlt_overlap - y) /
-                                       (rlt_overlap + 1))
-
-        baseY = 0
-        for tY in range(num_vert):
-            baseX = 0
-            for tX in range(num_horiz):
-                img = rlts_fin[tY][tX]
-                shape = img.shape
-
-                # Copy non overlapping image data
-                x1 = (0 if tX == 0 else rlt_overlap)
-                y1 = (0 if tY == 0 else rlt_overlap)
-                x2 = shape[1]
-                y2 = shape[0]
-                rlt[baseY+y1:baseY+y2, baseX +
-                    x1:baseX+x2] = img[y1:y2, x1:x2]
-
-                # Blend left
-                if tX > 0:
-                    rlt[baseY+y1:baseY+y2, baseX:baseX +
-                        rlt_overlap] += img[y1:y2, :rlt_overlap]
-
-                # Blend up
-                if tY > 0:
-                    rlt[baseY:baseY+rlt_overlap, baseX +
-                        x1:baseX+x2] += img[:rlt_overlap, x1:x2]
-
-                # Blend corner
-                if tX > 0 and tY > 0:
-                    rlt[baseY:baseY+rlt_overlap, baseX:baseX +
-                        rlt_overlap] += img[:rlt_overlap, :rlt_overlap]
-
-                baseX += shape[1] - rlt_overlap
-            baseY += shape[0] - rlt_overlap
-        return rlt
-
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
-    def process(self, img):
+    async def process(self, img):
         '''
         Does the processing part of ESRGAN. This method only exists because the same block of code needs to be ran twice for images with transparency.
 
@@ -611,7 +487,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         return output
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
-    def esrgan(self, imgs, model_name):
+    async def esrgan(self, imgs, model_name):
         '''
         Runs ESRGAN on all the images passed in with the specified model
 
@@ -622,19 +498,64 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 Returns:
                         rlts (array): The processed images
         '''
-        model_path = './models/' + model_name
+        #model_path = './models/' + model_name
         # torch.device('cpu' if args.cpu else 'cuda')
 
-        if model_path != self.last_model:
-            state_dict = torch.load(model_path)
+        if model_name != self.last_model:
+            if ':' in model_name or '&' in model_name: # interpolating OTF, example: 4xBox:25&4xPSNR:75
+                interps = model_name.split('&')[:2]
+                model_1 = torch.load('./models/' + interps[0].split(':')[0], pickle_module=unpickler.RestrictedUnpickle)
+                model_2 = torch.load('./models/' + interps[1].split(':')[0], pickle_module=unpickler.RestrictedUnpickle)
+                state_dict = OrderedDict()
+                for k, v_1 in model_1.items():
+                    v_2 = model_2[k]
+                    state_dict[k] = (int(interps[0].split(':')[1]) / 100) * v_1 + (int(interps[1].split(':')[1]) / 100) * v_2
+            else:
+                model_path = './models/' + model_name
+                state_dict = torch.load(model_path, pickle_module=unpickler.RestrictedUnpickle)
+            
 
             if 'conv_first.weight' in state_dict:
-                print('Error: Attempted to load a new-format model')
-                sys.exit(1)
+                print('Attempting to convert and load a new-format model')
+                old_net = {}
+                items = []
+                for k, v in state_dict.items():
+                    items.append(k)
+
+                old_net['model.0.weight'] = state_dict['conv_first.weight']
+                old_net['model.0.bias'] = state_dict['conv_first.bias']
+
+                for k in items.copy():
+                    if 'RDB' in k:
+                        ori_k = k.replace('RRDB_trunk.', 'model.1.sub.')
+                        if '.weight' in k:
+                            ori_k = ori_k.replace('.weight', '.0.weight')
+                        elif '.bias' in k:
+                            ori_k = ori_k.replace('.bias', '.0.bias')
+                        old_net[ori_k] = state_dict[k]
+                        items.remove(k)
+
+                old_net['model.1.sub.23.weight'] = state_dict['trunk_conv.weight']
+                old_net['model.1.sub.23.bias'] = state_dict['trunk_conv.bias']
+                old_net['model.3.weight'] = state_dict['upconv1.weight']
+                old_net['model.3.bias'] = state_dict['upconv1.bias']
+                old_net['model.6.weight'] = state_dict['upconv2.weight']
+                old_net['model.6.bias'] = state_dict['upconv2.bias']
+                old_net['model.8.weight'] = state_dict['HRconv.weight']
+                old_net['model.8.bias'] = state_dict['HRconv.bias']
+                old_net['model.10.weight'] = state_dict['conv_last.weight']
+                old_net['model.10.bias'] = state_dict['conv_last.bias']
+                state_dict = old_net
 
             # extract model information
             scale2 = 0
             max_part = 0
+            if 'f_HR_conv1.0.weight' in state_dict:
+                kind = 'SPSR'
+                scalemin = 4
+            else:
+                kind = 'ESRGAN'
+                scalemin = 6
             for part in list(state_dict):
                 parts = part.split('.')
                 n_parts = len(parts)
@@ -642,23 +563,30 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     nb = int(parts[3])
                 elif n_parts == 3:
                     part_num = int(parts[1])
-                    if part_num > 6 and parts[2] == 'weight':
+                    if part_num > scalemin and parts[0] == 'model' and parts[2] == 'weight':
                         scale2 += 1
                     if part_num > max_part:
                         max_part = part_num
                         out_nc = state_dict[part].shape[0]
             upscale = 2 ** scale2
             in_nc = state_dict['model.0.weight'].shape[1]
+            if kind == 'SPSR':
+                out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
             nf = state_dict['model.0.weight'].shape[0]
 
-            if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale:
-                self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
-                                           mode='CNA', res_scale=1, upsample_mode='upconv')
+            if in_nc != self.last_in_nc or out_nc != self.last_out_nc or nf != self.last_nf or nb != self.last_nb or upscale != self.last_scale or kind != self.last_kind:
+                if kind == 'ESRGAN':
+                    self.model = arch.RRDB_Net(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+                                        mode='CNA', res_scale=1, upsample_mode='upconv')
+                elif kind == 'SPSR':
+                    self.model = arch.SPSRNet(in_nc, out_nc, nf, nb, gc=32, upscale=upscale, norm_type=None, act_type='leakyrelu',
+                                     mode='CNA', upsample_mode='upconv')
                 self.last_in_nc = in_nc
                 self.last_out_nc = out_nc
                 self.last_nf = nf
                 self.last_nb = nb
                 self.last_scale = upscale
+                self.last_kind = kind
 
             self.model.load_state_dict(state_dict, strict=True)
             del state_dict
@@ -691,8 +619,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                 img1 = np.copy(img[:, :, :3])
                 img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
-                output1 = self.process(img1)
-                output2 = self.process(img2)
+                output1 = await self.process(img1)
+                output2 = await self.process(img2)
                 output = cv2.merge(
                     (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
             else:
@@ -705,7 +633,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 # pad with solid alpha channel
                 elif img.shape[2] == 3 and self.last_in_nc == 4:
                     img = np.dstack((img, np.full(img.shape[:-1], 1.)))
-                output = self.process(img)
+                output = await self.process(img)
 
             output = (output * 255.0).round()
             # if output.ndim == 3 and output.shape[2] == 4:
@@ -820,7 +748,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         img = img[y:y+h, x:x+w]
         return img
 
-    def parse_flags(self, args, message):
+    async def parse_flags(self, args, message):
         downscale = None
         filter = cv2.INTER_AREA
         montage = False
@@ -832,7 +760,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             arg = arg.lower()
             if arg in {'-downscale', '-d'}:
                 try:
-                    downscale = float(args[index + 1])
+                    downscale = float(args[index + 1]) if args[index + 1] != 'auto' else 'auto'
                 except:
                     raise ValueError('Downscale value not specified.')
             elif arg in {'-filter', '-f'}:
@@ -886,7 +814,27 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         image = np.asarray(bytearray(url.read()), dtype="uint8")
         image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
         return image
-
+    
+    async def check_resized(self, img):
+        h, w, c = img.shape
+        if c == 4:
+            b, g, r, a = cv2.split(img)
+            x,y,w,h = cv2.boundingRect(a)
+            img = img[y:y+h, x:x+w]
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            h, w, c = img.shape
+        sizes = [7, 5, 3, 2]
+        og_img = img
+        for size in sizes:
+            img = og_img
+            small_img = cv2.resize(img, None, fx=1/size, fy=1/size, interpolation=cv2.INTER_NEAREST)
+            img = cv2.resize(small_img, (w, h), interpolation=cv2.INTER_NEAREST)
+            # Not sure if its better to have tolerance but I'm going with it for now
+            # same = np.array_equal(og_img, img)
+            same = np.allclose(og_img, img)
+            if same:
+                return size * self.check_resized(small_img)
+        return 1
 
 bot.add_cog(ESRGAN(bot))
 
