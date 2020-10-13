@@ -21,13 +21,13 @@ from fuzzywuzzy import fuzz, process
 import utils.architecture as arch
 import utils.unpickler as unpickler
 import utils.imgops as ops
+import boto3
 
-# boto_kwargs = {
-#     "aws_access_key_id": os.getenv('AWSAccessKeyId'),
-#     "aws_secret_access_key": os.getenv('AWSSecretKey'),
-# }
-
-# s3 = boto3.Session(**boto_kwargs).resource('s3')
+boto_kwargs = {
+    "aws_access_key_id": os.getenv('AWSAccessKeyId'),
+    "aws_secret_access_key": os.getenv('AWSSecretKey'),
+}
+s3 = boto3.Session(**boto_kwargs).resource('s3')
 
 description = '''A rewrite of the ESRGAN bot entirely in python'''
 
@@ -62,21 +62,11 @@ bot.remove_command('help')
 class ESRGAN(commands.Cog):
     def __init__(self, bot):
 
-        #my_bucket = s3.Bucket('esrgan-bot-models')
+        my_bucket = s3.Bucket('esrgan-bot-models')
         os.mkdir('./models/')
-        #for s3_object in my_bucket.objects.all():
-        #    filename = s3_object.key
-        #    my_bucket.download_file(s3_object.key, './models/' + filename)
-        model_urls = {
-            '1x_NMKD-Jaywreck3-Lite_320k.pth': 'https://p-def6.pcloud.com/cBZczxzQ2ZgKNpX1Zj0qH7ZZhMlt37Z2ZZosJZkZVUnW7Z3JZMFZPpZBpZwkZB5ZjHZ1kZP7Z4HZRJZsFZHHZ1JZ8FtFXZHzCIdl9kGrmPKsuLEOlvFm8SgU4k/1x_NMKD-Jaywreck3-Lite_320k.pth',
-            '1x_NMKD-Jaywreck3-Soft-Lite_320k.pth': 'https://p-def6.pcloud.com/cBZSKlzQ2ZEBGpX1Zj0qH7ZZDglt37Z2ZZosJZkZVUnW7ZKkZn0ZT7ZsHZ9VZOFZ75ZQZDJZgVZX7ZYFZ4HZuVZ8FtFXZlzS5RH7Jw9BAbOdXNFpAO4YjCFTV/1x_NMKD-Jaywreck3-Soft-Lite_320k.pth',
-            '2x_FakeFaith-Lite_105000_G.pth': 'https://p-def1.pcloud.com/cBZBhtw82ZCiOmk1Zj0qH7ZZrglt37Z2ZZosJZkZc2dW7ZXXZSHZ7HZWpZvFZDXZ97ZOpZg5ZAZkkZdkZ70ZDJZUMKFXZaGLDPrfp5l0fiVByDdyHCbgHMg9y/2x_FakeFaith-Lite_105000_G.pth',
-            '2x_Faithful-Lite_275000_G.pth': 'https://p-def6.pcloud.com/cBZb8Xe82Zk5VVk1Zj0qH7ZZ0Clt37Z2ZZosJZkZy6lW7Z8HZMpZ4kZUVZBXZlkZfpZ95ZIJZDJZ57ZtpZv7Zn7ZJeEFXZr3tfzia55LLTe0xU54JDhfhaqk0X/2x_Faithful-Lite_275000_G.pth',
-            '1x_SBDV-DeJPEG-Lite_130000_G.pth': 'https://p-def1.pcloud.com/cBZX3CdL2ZAtxjoDZj0qH7ZZoClt37Z2ZZosJZkZQf9W7Zv7Zm5Z9pZnVZIZiXZzHZhpZx7ZkJZ8VZJXZjHZQHZvfeFXZWfW3pRDR1vQK2I4EqhKRxVNokqDy/1x_SBDV-DeJPEG-Lite_130000_G.pth'
-        }
-
-        for model in model_urls:
-            urllib.request.urlretrieve(model_urls[model], './models/{}'.format(model))
+        for s3_object in my_bucket.objects.all():
+            filename = s3_object.key
+            my_bucket.download_file(s3_object.key, './models/' + filename)
 
         self.bot = bot
         self.queue = {}
