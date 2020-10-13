@@ -833,7 +833,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             # same = np.array_equal(og_img, img)
             same = np.allclose(og_img, img)
             if same:
-                return size * self.check_resized(small_img)
+                return size * await self.check_resized(small_img)
         return 1
 
 bot.add_cog(ESRGAN(bot))
