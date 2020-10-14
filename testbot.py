@@ -448,7 +448,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                             await job['message'].channel.send('{}, your montage has been created.'.format(job['message'].author.mention), file=discord.File(data, job['filename'].split('.')[0] + '_montage' + ext))
                         except:
                             await job['message'].channel.send('{}, there was an error creating your montage.'.format(job['message'].author.mention))
-                    del img, job, data, rlt, rlts, imgs, sent_message, og_image
+                    del img, job, rlt, rlts, imgs, sent_message, og_image
                     gc.collect()
                 self.queue.pop(0)
             else:
@@ -626,8 +626,10 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
                 output1 = await self.process(img1)
                 output2 = await self.process(img2)
+                del img1, img2
                 output = cv2.merge(
                     (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
+                del output1, output2
             else:
                 if img.ndim == 2:
                     img = np.tile(np.expand_dims(img, axis=2),
