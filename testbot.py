@@ -395,8 +395,9 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                     imgs = [img]
 
                                 await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                                rlts, scale = await self.esrgan(
-                                    imgs, job['models'][i])
+                                # rlts, scale = await self.esrgan(
+                                #     imgs, job['models'][i])
+                                rlts = imgs
 
                                 if do_split:
                                     await sent_message.edit(content=sent_message.content + ' Merging...')
