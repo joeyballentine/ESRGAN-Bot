@@ -640,7 +640,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             # if output.ndim == 3 and output.shape[2] == 4:
 
             rlts.append(output)
-        torch.cuda.empty_cache()
+        torch.cpu.empty_cache()
+        del self.model
         return rlts, upscale
 
     # Method translated to python from BlueAmulet's original alias PR
