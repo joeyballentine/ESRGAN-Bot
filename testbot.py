@@ -472,24 +472,25 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 Returns:
                         rlt (array): The processed image
         '''
-        if img.shape[2] == 3:
-            img = img[:, :, [2, 1, 0]]
-        elif img.shape[2] == 4:
-            img = img[:, :, [2, 1, 0, 3]]
-        img = torch.from_numpy(np.transpose(img, (2, 0, 1))).float()
-        img_LR = img.unsqueeze(0)
-        img_LR = img_LR.to(self.device)
-        del img
-
-        output = self.model(img_LR).data.squeeze(
-            0).float().cpu().clamp_(0, 1).numpy()
-        if output.shape[0] == 3:
-            output = output[[2, 1, 0], :, :]
-        elif output.shape[0] == 4:
-            output = output[[2, 1, 0, 3], :, :]
-        output = np.transpose(output, (1, 2, 0))
-        del img_LR
-        return output
+        with torch.device(self.device):
+            if img.shape[2] == 3:
+                img = img[:, :, [2, 1, 0]]
+            elif img.shape[2] == 4:
+                img = img[:, :, [2, 1, 0, 3]]
+            img = torch.from_numpy(np.transpose(img, (2, 0, 1))).float()
+            img_LR = img.unsqueeze(0)
+            img_LR = img_LR.to(self.device)
+            del img
+    
+            output = self.model(img_LR).data.squeeze(
+                0).float().cpu().clamp_(0, 1).numpy()
+            if output.shape[0] == 3:
+                output = output[[2, 1, 0], :, :]
+            elif output.shape[0] == 4:
+                output = output[[2, 1, 0, 3], :, :]
+            output = np.transpose(output, (1, 2, 0))
+            del img_LR
+            return output
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
     async def esrgan(self, imgs, model_name):
