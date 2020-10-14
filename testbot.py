@@ -447,7 +447,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                             await job['message'].channel.send('{}, your montage has been created.'.format(job['message'].author.mention), file=discord.File(data, job['filename'].split('.')[0] + '_montage' + ext))
                         except:
                             await job['message'].channel.send('{}, there was an error creating your montage.'.format(job['message'].author.mention))
-                    del img, job, data, rlt, rlts, imgs, sent_message, og_image
+                    del img, job, data, rlt, rlts, imgs, sent_message, og_image, image
                 self.queue.pop(0)
             else:
                 for model_job in model_jobs:
