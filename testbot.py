@@ -477,6 +477,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         img = torch.from_numpy(np.transpose(img, (2, 0, 1))).float()
         img_LR = img.unsqueeze(0)
         img_LR = img_LR.to(self.device)
+        del img
 
         output = self.model(img_LR).data.squeeze(
             0).float().cpu().clamp_(0, 1).numpy()
@@ -485,6 +486,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         elif output.shape[0] == 4:
             output = output[[2, 1, 0, 3], :, :]
         output = np.transpose(output, (1, 2, 0))
+        del img_LR
         return output
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
@@ -640,7 +642,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             # if output.ndim == 3 and output.shape[2] == 4:
 
             rlts.append(output)
-        del self.model
+        del self.model, img
         return rlts, upscale
 
     # Method translated to python from BlueAmulet's original alias PR
