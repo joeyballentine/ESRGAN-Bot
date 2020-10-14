@@ -22,6 +22,7 @@ import utils.architecture as arch
 import utils.unpickler as unpickler
 import utils.imgops as ops
 import boto3
+import gc
 
 boto_kwargs = {
     "aws_access_key_id": os.getenv('AWSAccessKeyId'),
@@ -448,6 +449,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         except:
                             await job['message'].channel.send('{}, there was an error creating your montage.'.format(job['message'].author.mention))
                     del img, job, data, rlt, rlts, imgs, sent_message, og_image, image
+                    gc.collect()
                 self.queue.pop(0)
             else:
                 for model_job in model_jobs:
