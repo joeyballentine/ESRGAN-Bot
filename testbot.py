@@ -624,11 +624,10 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                 img1 = np.copy(img[:, :, :3])
                 img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
-                # output1 = await self.process(img1)
-                # output2 = await self.process(img2)
-                # output = cv2.merge(
-                #     (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
-                output = img
+                output1 = await self.process(img1)
+                output2 = await self.process(img2)
+                output = cv2.merge(
+                    (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
             else:
                 if img.ndim == 2:
                     img = np.tile(np.expand_dims(img, axis=2),
@@ -639,12 +638,13 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 # pad with solid alpha channel
                 elif img.shape[2] == 3 and self.last_in_nc == 4:
                     img = np.dstack((img, np.full(img.shape[:-1], 1.)))
-                output = img # await self.process(img)
+                output = await self.process(img)
 
             output = (output * 255.0).round()
             # if output.ndim == 3 and output.shape[2] == 4:
 
             rlts.append(output)
+            del output
         del self.model, img
         return rlts, upscale
 
