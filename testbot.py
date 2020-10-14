@@ -624,10 +624,11 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                 img1 = np.copy(img[:, :, :3])
                 img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
-                output1 = await self.process(img1)
-                output2 = await self.process(img2)
-                output = cv2.merge(
-                    (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
+                # output1 = await self.process(img1)
+                # output2 = await self.process(img2)
+                # output = cv2.merge(
+                #     (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
+                output = img
             else:
                 if img.ndim == 2:
                     img = np.tile(np.expand_dims(img, axis=2),
