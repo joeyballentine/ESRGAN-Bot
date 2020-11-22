@@ -198,8 +198,8 @@ async def recompose_tensor(patches, full_height, full_width, overlap=10):
         print("Error: The number of patches provided to the recompose function does not match the number of patches in each image.")
     final_batch_size = batch_size // n_patches
 
-    blending_in = torch.linspace(0.1, 1.0, overlap)
-    blending_out = torch.linspace(1.0, 0.1, overlap)
+    blending_in = torch.linspace(0.0, 2.0, overlap)
+    blending_out = torch.linspace(2.0, 0.0, overlap)
     middle_part = torch.ones(patch_size - 2 * overlap)
     blending_profile = torch.cat([blending_in, middle_part, blending_out], 0)
 
@@ -231,3 +231,70 @@ async def recompose_tensor(patches, full_height, full_width, overlap=10):
 
     return recomposed_tensor
 
+async def esrgan_launcher_split_merge(input_image, upscale_function, scale_factor=4, tile_size=512, tile_padding=0.125):
+    if len(input_image.shape) > 2:
+        width, height, depth = input_image.shape
+    else:
+        width, height = input_image.shape[:2]
+        depth = 1
+    output_width = width * scale_factor
+    output_height = height * scale_factor
+    output_shape = (output_width, output_height, depth)
+
+    # start with black image
+    output_image = np.zeros(output_shape, np.uint8)
+
+    tile_padding = math.ceil(tile_size * tile_padding)
+    tile_size = math.ceil(tile_size / scale_factor)
+
+    tiles_x = math.ceil(width / tile_size)
+    tiles_y = math.ceil(height / tile_size)
+
+    for y in range(tiles_y):
+        for x in range(tiles_x):
+            # extract tile from input image
+            ofs_x = x * tile_size
+            ofs_y = y * tile_size
+
+            # input tile area on total image
+            input_start_x = ofs_x
+            input_end_x = min(ofs_x + tile_size, width)
+
+            input_start_y = ofs_y
+            input_end_y = min(ofs_y + tile_size, height)
+
+            # input tile area on total image with padding
+            input_start_x_pad = max(input_start_x - tile_padding, 0)
+            input_end_x_pad = min(input_end_x + tile_padding, width)
+
+            input_start_y_pad = max(input_start_y - tile_padding, 0)
+            input_end_y_pad = min(input_end_y + tile_padding, height)
+
+            # input tile dimensions
+            input_tile_width = input_end_x - input_start_x
+            input_tile_height = input_end_y - input_start_y
+
+            input_tile = input_image[input_start_x_pad:input_end_x_pad, input_start_y_pad:input_end_y_pad]
+
+            # upscale tile
+            output_tile = await upscale_function(input_tile)
+
+            # output tile area on total image
+            output_start_x = input_start_x * scale_factor
+            output_end_x = input_end_x * scale_factor
+
+            output_start_y = input_start_y * scale_factor
+            output_end_y = input_end_y * scale_factor
+
+            # output tile area without padding
+            output_start_x_tile = (input_start_x - input_start_x_pad) * scale_factor
+            output_end_x_tile = output_start_x_tile + input_tile_width * scale_factor
+
+            output_start_y_tile = (input_start_y - input_start_y_pad) * scale_factor
+            output_end_y_tile = output_start_y_tile + input_tile_height * scale_factor
+
+            # put tile into output image
+            output_image[output_start_x:output_end_x, output_start_y:output_end_y] = \
+                output_tile[output_start_x_tile:output_end_x_tile, output_start_y_tile:output_end_y_tile]
+
+    return output_image
