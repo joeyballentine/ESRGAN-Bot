@@ -3,6 +3,8 @@ import torch
 import cv2
 from torchvision.utils import make_grid
 import math
+import gc
+import math
 
 def bgr_to_rgb(image: torch.Tensor) -> torch.Tensor:
     # flip image channels
@@ -231,70 +233,54 @@ async def recompose_tensor(patches, full_height, full_width, overlap=10):
 
     return recomposed_tensor
 
-async def esrgan_launcher_split_merge(input_image, upscale_function, scale_factor=4, tile_size=512, tile_padding=0.125):
-    if len(input_image.shape) > 2:
-        width, height, depth = input_image.shape
-    else:
-        width, height = input_image.shape[:2]
-        depth = 1
-    output_width = width * scale_factor
-    output_height = height * scale_factor
-    output_shape = (output_width, output_height, depth)
+def auto_split_upscale(lr_img, upscale_function, scale=4, overlap=32, max_depth=None, current_depth=1):
 
-    # start with black image
-    output_image = np.zeros(output_shape, np.uint8)
+    print(lr_img.shape)
 
-    tile_padding = math.ceil(tile_size * tile_padding)
-    tile_size = math.ceil(tile_size / scale_factor)
+    if current_depth > 1 and (lr_img.shape[0] == lr_img.shape[1] == overlap):
+        raise RecursionError('Reached bottom of recursion depth.')
 
-    tiles_x = math.ceil(width / tile_size)
-    tiles_y = math.ceil(height / tile_size)
+    # Attempt to upscale if unknown depth or if reached known max depth
+    if max_depth is None or max_depth == current_depth:
+        try:
+            result = upscale_function(lr_img)
+            return result, current_depth
+        except RuntimeError as e:
+            # Check to see if its actually the CUDA out of memory error
+            if 'allocate' in str(e):
+                # Collect garbage (clear VRAM)
+                torch.cuda.empty_cache()
+                gc.collect()
+            # Re-raise the exception if not an OOM error
+            else:
+                raise RuntimeError(e)
 
-    for y in range(tiles_y):
-        for x in range(tiles_x):
-            # extract tile from input image
-            ofs_x = x * tile_size
-            ofs_y = y * tile_size
+    h, w, c = lr_img.shape
 
-            # input tile area on total image
-            input_start_x = ofs_x
-            input_end_x = min(ofs_x + tile_size, width)
+    # Split image into 4ths
+    top_left = lr_img[:h//2 + overlap, :w//2 + overlap, :]
+    top_right = lr_img[:h//2 + overlap, w//2 - overlap:, :]
+    bottom_left = lr_img[h//2 - overlap:, :w//2 + overlap, :]
+    bottom_right = lr_img[h//2 - overlap:, w//2 - overlap:, :]
 
-            input_start_y = ofs_y
-            input_end_y = min(ofs_y + tile_size, height)
+    # Recursively upscale the quadrants
+    # After we go through the top left quadrant, we know the maximum depth and no longer need to test for out-of-memory
+    top_left_rlt, depth = auto_split_upscale(top_left, upscale_function, scale=scale, overlap=overlap, current_depth=current_depth+1)
+    top_right_rlt, _ = auto_split_upscale(top_right, upscale_function, scale=scale, overlap=overlap, max_depth=depth, current_depth=current_depth+1)
+    bottom_left_rlt, _ = auto_split_upscale(bottom_left, upscale_function, scale=scale, overlap=overlap, max_depth=depth, current_depth=current_depth+1)
+    bottom_right_rlt, _ = auto_split_upscale(bottom_right, upscale_function, scale=scale, overlap=overlap, max_depth=depth, current_depth=current_depth+1)
 
-            # input tile area on total image with padding
-            input_start_x_pad = max(input_start_x - tile_padding, 0)
-            input_end_x_pad = min(input_end_x + tile_padding, width)
+    # Define output shape
+    out_h = h * scale
+    out_w = w * scale
 
-            input_start_y_pad = max(input_start_y - tile_padding, 0)
-            input_end_y_pad = min(input_end_y + tile_padding, height)
+    # Create blank output image
+    output_img = np.zeros((out_h, out_w, c), np.uint8)
 
-            # input tile dimensions
-            input_tile_width = input_end_x - input_start_x
-            input_tile_height = input_end_y - input_start_y
+    # Fill output image with tiles, cropping out the overlaps
+    output_img[:out_h//2, :out_w//2, :] = top_left_rlt[:out_h//2, :out_w//2, :]
+    output_img[:out_h//2, -out_w//2:, :] = top_right_rlt[:out_h//2, -out_w//2:, :]
+    output_img[-out_h//2:, :out_w//2, :] = bottom_left_rlt[-out_h//2:, :out_w//2, :]
+    output_img[-out_h//2:, -out_w//2:, :] = bottom_right_rlt[-out_h//2:, -out_w//2:, :]
 
-            input_tile = input_image[input_start_x_pad:input_end_x_pad, input_start_y_pad:input_end_y_pad]
-
-            # upscale tile
-            output_tile = await upscale_function(input_tile)
-
-            # output tile area on total image
-            output_start_x = input_start_x * scale_factor
-            output_end_x = input_end_x * scale_factor
-
-            output_start_y = input_start_y * scale_factor
-            output_end_y = input_end_y * scale_factor
-
-            # output tile area without padding
-            output_start_x_tile = (input_start_x - input_start_x_pad) * scale_factor
-            output_end_x_tile = output_start_x_tile + input_tile_width * scale_factor
-
-            output_start_y_tile = (input_start_y - input_start_y_pad) * scale_factor
-            output_end_y_tile = output_start_y_tile + input_tile_height * scale_factor
-
-            # put tile into output image
-            output_image[output_start_x:output_end_x, output_start_y:output_end_y] = \
-                output_tile[output_start_x_tile:output_end_x_tile, output_start_y_tile:output_end_y_tile]
-
-    return output_image
+    return output_img, depth
