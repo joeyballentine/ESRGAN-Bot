@@ -3,6 +3,8 @@ import torch
 import cv2
 from torchvision.utils import make_grid
 import math
+import gc
+import math
 
 def bgr_to_rgb(image: torch.Tensor) -> torch.Tensor:
     # flip image channels
@@ -198,8 +200,8 @@ async def recompose_tensor(patches, full_height, full_width, overlap=10):
         print("Error: The number of patches provided to the recompose function does not match the number of patches in each image.")
     final_batch_size = batch_size // n_patches
 
-    blending_in = torch.linspace(0.1, 1.0, overlap)
-    blending_out = torch.linspace(1.0, 0.1, overlap)
+    blending_in = torch.linspace(0.0, 2.0, overlap)
+    blending_out = torch.linspace(2.0, 0.0, overlap)
     middle_part = torch.ones(patch_size - 2 * overlap)
     blending_profile = torch.cat([blending_in, middle_part, blending_out], 0)
 
@@ -231,3 +233,54 @@ async def recompose_tensor(patches, full_height, full_width, overlap=10):
 
     return recomposed_tensor
 
+def auto_split_upscale(lr_img, upscale_function, scale=4, overlap=32, max_depth=None, current_depth=1):
+
+    print(lr_img.shape)
+
+    if current_depth > 1 and (lr_img.shape[0] == lr_img.shape[1] == overlap):
+        raise RecursionError('Reached bottom of recursion depth.')
+
+    # Attempt to upscale if unknown depth or if reached known max depth
+    if max_depth is None or max_depth == current_depth:
+        try:
+            result = upscale_function(lr_img)
+            return result, current_depth
+        except RuntimeError as e:
+            # Check to see if its actually the CUDA out of memory error
+            if 'allocate' in str(e):
+                # Collect garbage (clear VRAM)
+                torch.cuda.empty_cache()
+                gc.collect()
+            # Re-raise the exception if not an OOM error
+            else:
+                raise RuntimeError(e)
+
+    h, w, c = lr_img.shape
+
+    # Split image into 4ths
+    top_left = lr_img[:h//2 + overlap, :w//2 + overlap, :]
+    top_right = lr_img[:h//2 + overlap, w//2 - overlap:, :]
+    bottom_left = lr_img[h//2 - overlap:, :w//2 + overlap, :]
+    bottom_right = lr_img[h//2 - overlap:, w//2 - overlap:, :]
+
+    # Recursively upscale the quadrants
+    # After we go through the top left quadrant, we know the maximum depth and no longer need to test for out-of-memory
+    top_left_rlt, depth = auto_split_upscale(top_left, upscale_function, scale=scale, overlap=overlap, current_depth=current_depth+1)
+    top_right_rlt, _ = auto_split_upscale(top_right, upscale_function, scale=scale, overlap=overlap, max_depth=depth, current_depth=current_depth+1)
+    bottom_left_rlt, _ = auto_split_upscale(bottom_left, upscale_function, scale=scale, overlap=overlap, max_depth=depth, current_depth=current_depth+1)
+    bottom_right_rlt, _ = auto_split_upscale(bottom_right, upscale_function, scale=scale, overlap=overlap, max_depth=depth, current_depth=current_depth+1)
+
+    # Define output shape
+    out_h = h * scale
+    out_w = w * scale
+
+    # Create blank output image
+    output_img = np.zeros((out_h, out_w, c), np.uint8)
+
+    # Fill output image with tiles, cropping out the overlaps
+    output_img[:out_h//2, :out_w//2, :] = top_left_rlt[:out_h//2, :out_w//2, :]
+    output_img[:out_h//2, -out_w//2:, :] = top_right_rlt[:out_h//2, -out_w//2:, :]
+    output_img[-out_h//2:, :out_w//2, :] = bottom_left_rlt[-out_h//2:, :out_w//2, :]
+    output_img[-out_h//2:, -out_w//2:, :] = bottom_right_rlt[-out_h//2:, -out_w//2:, :]
+
+    return output_img, depth

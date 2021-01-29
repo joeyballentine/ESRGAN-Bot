@@ -8,6 +8,7 @@ import urllib.request
 from io import BytesIO
 from os import walk
 from collections import OrderedDict
+import functools
 
 import cv2
 import discord
@@ -289,9 +290,9 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await message.channel.send('{}, your image could not be downloaded.'.format(message.author.mention))
             return
 
-        resize_scale = await self.check_resized(image)
-        if resize_scale > 1 and not downscale:
-            await message.channel.send('{}, it looks like you are trying to upscale a resized image. Consider downscaling this image by {} with nearest neighbor first..'.format(message.author.mention, resize_scale))
+        # resize_scale = await self.check_resized(image)
+        # if resize_scale > 1 and not downscale:
+        #     await message.channel.send('{}, it looks like you are trying to upscale a resized image. Consider downscaling this image by {} with nearest neighbor first..'.format(message.author.mention, resize_scale))
         
         if downscale:
             try:
@@ -350,42 +351,21 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
 
                         for i in range(len(job['models'])):
 
-                            img_height, img_width, img_channels = img.shape
+                            img_height, img_width = img.shape[:2]
 
-                            if not image.shape[0] > config['img_size_cutoff'] and not image.shape[1] > config['img_size_cutoff']:
-
-                                if img_height > config['split_threshold'] or img_width > config['split_threshold']:
-                                    dim = min(img_height, img_width, config['split_threshold'])
-                                    do_split = True
-                                    overlap = 16
-                                else:
-                                    do_split = False
+                            if not img_height > config['img_size_cutoff'] and not img_width > config['img_size_cutoff']:
 
                                 await sent_message.edit(content=sent_message.content + ' | ')
 
                                 if seamless:
                                     img = self.make_seamless(img)
 
-                                if do_split:
-                                    await sent_message.edit(content=sent_message.content + ' Splitting...')
-                                    tensor_img = await ops.np2tensor(img)
-                                    imgs = await ops.patchify_tensor(tensor_img, dim, overlap=overlap)
-                                    imgs = [await ops.tensor2np(img) for img in imgs]
-                                else:
-                                    imgs = [img]
+                                await self.load_model(job['models'][i])
+                                scale = self.last_scale
 
-                                await sent_message.edit(content=sent_message.content + ' Upscaling...')
-                                rlts, scale = await self.esrgan(
-                                    imgs, job['models'][i])
-
-                                if do_split:
-                                    await sent_message.edit(content=sent_message.content + ' Merging...')
-                                    rlts = [await ops.np2tensor(rlt.astype('uint8')) for rlt in rlts]
-                                    rlts = torch.cat(rlts, 0)
-                                    rlt_tensor = await ops.recompose_tensor(rlts, img_height * scale, img_width * scale, overlap=overlap * scale)
-                                    rlt = await ops.tensor2np(rlt_tensor)
-                                else:
-                                    rlt = rlts[0]
+                                await sent_message.edit(content=sent_message.content + ' Processing...')
+                                upscale = functools.partial(ops.auto_split_upscale, img, self.esrgan, scale)
+                                rlt, _ = await bot.loop.run_in_executor(None, upscale)
 
                                 if seamless:
                                     rlt = self.crop_seamless(rlt, scale)
@@ -440,7 +420,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             await message.channel.send('{}, your image is larger than the size threshold ({}).'.format(message.author.mention, config['img_size_cutoff']))
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
-    async def process(self, img):
+    def process(self, img):
         '''
         Does the processing part of ESRGAN. This method only exists because the same block of code needs to be ran twice for images with transparency.
 
@@ -456,7 +436,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             img = img[:, :, [2, 1, 0, 3]]
         img = torch.from_numpy(np.transpose(img, (2, 0, 1))).float()
         img_LR = img.unsqueeze(0)
-        img_LR = img_LR.to(self.device)
+        img_LR = img_LR.to(self.device, non_blocking=True)
 
         output = self.model(img_LR).data.squeeze(
             0).float().cpu().clamp_(0, 1).numpy()
@@ -467,21 +447,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         output = np.transpose(output, (1, 2, 0))
         return output
 
-    # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
-    async def esrgan(self, imgs, model_name):
-        '''
-        Runs ESRGAN on all the images passed in with the specified model
-
-                Parameters:
-                        imgs (array): The images to run ESRGAN on
-                        model_name (string): The model to use
-
-                Returns:
-                        rlts (array): The processed images
-        '''
-        #model_path = './models/' + model_name
-        # torch.device('cpu' if args.cpu else 'cuda')
-
+    async def load_model(self, model_name):
         if model_name != self.last_model:
             if ':' in model_name or '&' in model_name: # interpolating OTF, example: 4xBox:25&4xPSNR:75
                 interps = model_name.split('&')[:2]
@@ -550,6 +516,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         max_part = part_num
                         out_nc = state_dict[part].shape[0]
             upscale = 2 ** scale2
+
             in_nc = state_dict['model.0.weight'].shape[1]
             if kind == 'SPSR':
                 out_nc = state_dict['f_HR_conv1.0.weight'].shape[0]
@@ -574,54 +541,71 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             self.model.eval()
             for k, v in self.model.named_parameters():
                 v.requires_grad = False
-            self.model = self.model.to(self.device)
+            self.model = self.model.to(self.device, non_blocking=True)
 
-        rlts = []
-        for img in imgs:
-            # read image
-            img = img * 1. / np.iinfo(img.dtype).max
+    # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
+    def esrgan(self, img):
+        '''
+        Runs ESRGAN on all the images passed in with the specified model
 
-            if img.ndim == 3 and img.shape[2] == 4 and self.last_in_nc == 3 and self.last_out_nc == 3:
-                shape = img.shape
-                # img1 = np.copy(img[:, :, :3])
-                # img2 = np.copy(img[:, :, :3])
-                # for c in range(3):
-                #     img1[:, :, c] *= img[:, :, 3]
-                #     img2[:, :, c] = (img2[:, :, c] - 1) * img[:, :, 3] + 1
+                Parameters:
+                        imgs (array): The images to run ESRGAN on
+                        model_name (string): The model to use
 
-                # output1 = self.process(img1)
-                # output2 = self.process(img2)
-                # alpha = 1 - np.mean(output2-output1, axis=2)
-                # output = np.dstack((output1, alpha))
-                # shape = output1.shape
-                # divalpha = np.where(alpha < 1. / 510., 1, alpha)
-                # for c in range(shape[2]):
-                #     output[:, :, c] /= divalpha
+                Returns:
+                        rlts (array): The processed images
+        '''
+        #model_path = './models/' + model_name
+        # torch.device('cpu' if args.cpu else 'cuda')
 
-                img1 = np.copy(img[:, :, :3])
-                img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
-                output1 = await self.process(img1)
-                output2 = await self.process(img2)
-                output = cv2.merge(
-                    (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
-            else:
-                if img.ndim == 2:
-                    img = np.tile(np.expand_dims(img, axis=2),
-                                  (1, 1, min(self.last_in_nc, 3)))
-                if img.shape[2] > self.last_in_nc:  # remove extra channels
-                    print('Warning: Truncating image channels')
-                    img = img[:, :, :self.last_in_nc]
-                # pad with solid alpha channel
-                elif img.shape[2] == 3 and self.last_in_nc == 4:
-                    img = np.dstack((img, np.full(img.shape[:-1], 1.)))
-                output = await self.process(img)
+        # imgs = [imgs]
 
-            output = (output * 255.0).round()
-            # if output.ndim == 3 and output.shape[2] == 4:
+        # rlts = []
+        # for img in imgs:
+        # read image
+        img = img * 1. / np.iinfo(img.dtype).max
 
-            rlts.append(output)
+        if img.ndim == 3 and img.shape[2] == 4 and self.last_in_nc == 3 and self.last_out_nc == 3:
+            shape = img.shape
+            # img1 = np.copy(img[:, :, :3])
+            # img2 = np.copy(img[:, :, :3])
+            # for c in range(3):
+            #     img1[:, :, c] *= img[:, :, 3]
+            #     img2[:, :, c] = (img2[:, :, c] - 1) * img[:, :, 3] + 1
+
+            # output1 = self.process(img1)
+            # output2 = self.process(img2)
+            # alpha = 1 - np.mean(output2-output1, axis=2)
+            # output = np.dstack((output1, alpha))
+            # shape = output1.shape
+            # divalpha = np.where(alpha < 1. / 510., 1, alpha)
+            # for c in range(shape[2]):
+            #     output[:, :, c] /= divalpha
+
+            img1 = np.copy(img[:, :, :3])
+            img2 = cv2.merge((img[:, :, 3], img[:, :, 3], img[:, :, 3]))
+            output1 = self.process(img1)
+            output2 = self.process(img2)
+            output = cv2.merge(
+                (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0]))
+        else:
+            if img.ndim == 2:
+                img = np.tile(np.expand_dims(img, axis=2),
+                                (1, 1, min(self.last_in_nc, 3)))
+            if img.shape[2] > self.last_in_nc:  # remove extra channels
+                print('Warning: Truncating image channels')
+                img = img[:, :, :self.last_in_nc]
+            # pad with solid alpha channel
+            elif img.shape[2] == 3 and self.last_in_nc == 4:
+                img = np.dstack((img, np.full(img.shape[:-1], 1.)))
+            output = self.process(img)
+
+        output = (output * 255.0).round()
+        # if output.ndim == 3 and output.shape[2] == 4:
+
+            # rlts.append(output)
         torch.cuda.empty_cache()
-        return rlts, upscale
+        return output
 
     # Method translated to python from BlueAmulet's original alias PR
     # Basically this allows the fuzzy matching to look at individual phrases present in the model name
