@@ -535,6 +535,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 self.last_nb = nb
                 self.last_scale = upscale
                 self.last_kind = kind
+                self.last_model = model_name
 
             self.model.load_state_dict(state_dict, strict=True)
             del state_dict
