@@ -21,14 +21,12 @@ An example `config.json` looks like this:
 ```yml
 bot_token: 'Discord Bot Token'
 bot_prefix: '--'
-split_threshold: 512
 img_size_cutoff: 1500
 moderator_role_id: 549505502779015178
 ```
 
 -   `bot_token` is the client token of your Discord bot.
 -   `bot_prefix` is the prefix that will be used on all the bot's commands.
--   `split_threshold` is the number of pixels (both width and height) that will trigger the splitting/merging functionality. This is widely system dependent as the amount of VRAM your GPU has determines how large of an image ESRGAN can process at once. you may need to play with this number a bit to see what works for you.
 -   `img_size_cutoff` is the maximum resolution that you will allow someone to submit to the bot to avoid extended upscaling times.
 -   `moderator_role_id` is the role id (can also be the name of the role) that will be allowed to run certain restricted commands.
 
