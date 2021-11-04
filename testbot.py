@@ -32,14 +32,14 @@ bot.remove_command("help")
 
 @bot.check
 # Note to anyone who sees this, you can safely remove this if you want to run a bot that runs anywhere
-async def globally_block_not_gu(ctx):
+async def globally_block_not_guild(ctx):
     is_dm = ctx.guild is None
-    if is_dm:
+    if is_dm and config["block_dms"]:
         print(f"DM, {ctx.author.name}")
-        guild = bot.get_guild(547949405949657098)
+        guild = bot.get_guild(config["guild_id"])
         guild_member = await guild.fetch_member(ctx.author.id)
         role = discord.utils.find(
-            lambda r: r.name == "Bot Supporter", guild_member.roles
+            lambda r: r.name == config["patreon_role_name"], guild_member.roles
         )
         if role:
             print(f"{ctx.author.name} is permitted to use the bot in DMs.")
@@ -52,7 +52,7 @@ async def globally_block_not_gu(ctx):
             )
         return False
     else:
-        is_gu = ctx.guild.id == 547949405949657098
+        is_gu = ctx.guild.id == config["guild_id"]
         if not is_gu:
             print(f"{ctx.guild.name}, {ctx.author.name}")
             await ctx.message.channel.send(
@@ -958,7 +958,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 montage = True
             elif arg in {"-seamless", "-s"}:
                 seamless = True
-        return downscale, filter, montage, blur_type, blur_amt, fixhist, seamless
+        return downscale, filter, montage, blur_type, blur_amt, seamless
 
     def downscale_img(self, image, filter, amt):
         scale_percent = 1 / float(amt) * 100
