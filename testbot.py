@@ -1,4 +1,6 @@
+import asyncio
 import functools
+import gc
 import math
 import os.path
 import re
@@ -15,9 +17,11 @@ import yaml
 from discord.ext import commands
 from fuzzywuzzy import fuzz, process
 
-import utils.architecture as arch
 import utils.imgops as ops
 import utils.unpickler as unpickler
+from utils.architecture.RRDB import RRDBNet as RRDB
+from utils.architecture.SPSR import SPSRNet as SPSR
+from utils.architecture.SRVGG import SRVGGNetCompact as RealESRGANv2
 
 description = """A rewrite of the ESRGAN bot entirely in python"""
 
@@ -26,7 +30,8 @@ try:
 except:
     print("You must provide a config.yml!!!")
 
-bot = commands.Bot(command_prefix=config["bot_prefix"], description=description)
+bot = commands.Bot(
+    command_prefix=config["bot_prefix"], description=description)
 bot.remove_command("help")
 
 
@@ -79,6 +84,7 @@ class ESRGAN(commands.Cog):
         self.last_kind = None
         self.model = None
         self.device = torch.device("cuda")
+        torch.set_default_tensor_type(torch.cuda.HalfTensor)
 
         self.current_task = None
 
@@ -107,8 +113,6 @@ class ESRGAN(commands.Cog):
 `{0}upscale [url] [model]` // Upscales linked image using specified model. Model name input will be automatically matched with the closest model name.
 
 `{0}models [-dm]` // Lists all available models as a .txt file. Can add `-dm` flag to be DM'd a regular list.
-
-`{0}addmodel [url] [nickname]` // Adds model from url with nickname. Please include the scale of the model in the name, for example, 4xBox.
 
 `{0}montage [url1] [url2] [label]` // Creates a montage of two specified images with specified label
 
@@ -167,7 +171,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         model_name = nickname.replace(".pth", "") + ".pth"
         try:
             if not os.path.exists("./models/{}".format(model_name)):
-                urllib.request.urlretrieve(url, "./models/{}".format(model_name))
+                urllib.request.urlretrieve(
+                    url, "./models/{}".format(model_name))
                 await ctx.message.channel.send(
                     "Model {} successfully added.".format(nickname)
                 )
@@ -188,7 +193,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         model_name = nickname.replace(".pth", "") + ".pth"
         try:
             if os.path.exists("./models/{}".format(model_name)):
-                urllib.request.urlretrieve(url, "./models/{}".format(model_name))
+                urllib.request.urlretrieve(
+                    url, "./models/{}".format(model_name))
                 await ctx.message.channel.send(
                     "Model {} successfully added.".format(nickname)
                 )
@@ -274,7 +280,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
     async def downscale(self, ctx, img, amt, filter="area"):
         try:
             image = self.download_img_from_url(img)
-            filename = img[img.rfind("/") + 1 :]
+            filename = img[img.rfind("/") + 1:]
         except:
             await ctx.message.channel.send(
                 "{}, your images could not be downloaded.".format(
@@ -303,11 +309,13 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         image = self.downscale_img(image, interpolation, amt)
 
         data = BytesIO(
-            cv2.imencode(".png", image, [cv2.IMWRITE_PNG_COMPRESSION, 16])[1].tostring()
+            cv2.imencode(".png", image, [cv2.IMWRITE_PNG_COMPRESSION, 16])[
+                1].tostring()
         )
 
         await ctx.message.channel.send(
-            "{}, your image has been downscaled by {}.".format(ctx.author.mention, amt),
+            "{}, your image has been downscaled by {}.".format(
+                ctx.author.mention, amt),
             file=discord.File(data, "{}.png".format(filename.split(".")[0])),
         )
 
@@ -323,7 +331,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         else:
             try:
                 url = args[0]
-                filename = url[url.rfind("/") + 1 :]
+                filename = url[url.rfind("/") + 1:]
             except:
                 await message.channel.send(
                     "{}, you need to provide a url or an image attachment.".format(
@@ -336,7 +344,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             model_jobs = args[1].split(";")[:3]
         except:
             await message.channel.send(
-                "{}, you need to provide a model.".format(message.author.mention)
+                "{}, you need to provide a model.".format(
+                    message.author.mention)
             )
             return
 
@@ -357,7 +366,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             image = self.download_img_from_url(url)
         except:
             await message.channel.send(
-                "{}, your image could not be downloaded.".format(message.author.mention)
+                "{}, your image could not be downloaded.".format(
+                    message.author.mention)
             )
             return
 
@@ -489,17 +499,18 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                         data = BytesIO(
                             cv2.imencode(
                                 ".png", rlt, [cv2.IMWRITE_PNG_COMPRESSION, 16]
-                            )[1].tostring()
+                            )[1].tobytes()
                         )
                         if len(data.getvalue()) >= 8000000:
                             ext = ".webp"
                             data = BytesIO(
                                 cv2.imencode(
-                                    ".webp", rlt, [cv2.IMWRITE_WEBP_QUALITY, 64]
-                                )[1].tostring()
+                                    ".webp", rlt, [
+                                        cv2.IMWRITE_WEBP_QUALITY, 64]
+                                )[1].tobytes()
                             )
                         # send result through discord
-                        await job["message"].channel.send(
+                        await bot.loop.create_task(job["message"].channel.send(
                             "{}, your image has been upscaled using {}.".format(
                                 job["message"].author.mention,
                                 ", ".join(job["models"])
@@ -508,8 +519,7 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                             ),
                             file=discord.File(
                                 data, job["filename"].split(".")[0] + ext
-                            ),
-                        )
+                            )))
                         await sent_message.edit(content=sent_message.content + " Done.")
                     except Exception as e:
                         print(e)
@@ -546,21 +556,25 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                                         [cv2.IMWRITE_WEBP_QUALITY, 64],
                                     )[1].tostring()
                                 )
-                            await job["message"].channel.send(
+                            await bot.loop.create_task(job["message"].channel.send(
                                 "{}, your montage has been created.".format(
                                     job["message"].author.mention
                                 ),
                                 file=discord.File(
                                     data,
-                                    job["filename"].split(".")[0] + "_montage" + ext,
-                                ),
-                            )
+                                    job["filename"].split(
+                                        ".")[0] + "_montage" + ext,
+                                )))
+                            del montage_img
                         except:
                             await job["message"].channel.send(
                                 "{}, there was an error creating your montage.".format(
                                     job["message"].author.mention
                                 )
                             )
+                    # Garbage collection
+                    gc.collect()
+                    torch.cuda.empty_cache()
                 self.queue.pop(0)
             else:
                 for model_job in model_jobs:
@@ -582,7 +596,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     )
                     await message.channel.send(
                         "{}, {} has been added to the queue. Your image is #{} in line for processing.".format(
-                            message.author.mention, filename, len(self.queue[0]["jobs"])
+                            message.author.mention, filename, len(
+                                self.queue[0]["jobs"])
                         )
                     )
         else:
@@ -610,8 +625,10 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         img = torch.from_numpy(np.transpose(img, (2, 0, 1))).float()
         img_LR = img.unsqueeze(0)
         img_LR = img_LR.to(self.device, non_blocking=True)
+        img_LR = img_LR.half()
 
-        output = self.model(img_LR).data.squeeze(0).float().cpu().clamp_(0, 1).numpy()
+        output = self.model(img_LR).data.squeeze(
+            0).float().cpu().clamp_(0, 1).numpy()
         if output.shape[0] == 3:
             output = output[[2, 1, 0], :, :]
         elif output.shape[0] == 4:
@@ -645,126 +662,43 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     model_path, pickle_module=unpickler.RestrictedUnpickle
                 )
 
-            if "conv_first.weight" in state_dict:
-                print("Attempting to convert and load a new-format model")
-                old_net = {}
-                items = []
-                for k, v in state_dict.items():
-                    items.append(k)
-
-                old_net["model.0.weight"] = state_dict["conv_first.weight"]
-                old_net["model.0.bias"] = state_dict["conv_first.bias"]
-
-                for k in items.copy():
-                    if "RDB" in k:
-                        ori_k = k.replace("RRDB_trunk.", "model.1.sub.")
-                        if ".weight" in k:
-                            ori_k = ori_k.replace(".weight", ".0.weight")
-                        elif ".bias" in k:
-                            ori_k = ori_k.replace(".bias", ".0.bias")
-                        old_net[ori_k] = state_dict[k]
-                        items.remove(k)
-
-                old_net["model.1.sub.23.weight"] = state_dict["trunk_conv.weight"]
-                old_net["model.1.sub.23.bias"] = state_dict["trunk_conv.bias"]
-                old_net["model.3.weight"] = state_dict["upconv1.weight"]
-                old_net["model.3.bias"] = state_dict["upconv1.bias"]
-                old_net["model.6.weight"] = state_dict["upconv2.weight"]
-                old_net["model.6.bias"] = state_dict["upconv2.bias"]
-                old_net["model.8.weight"] = state_dict["HRconv.weight"]
-                old_net["model.8.bias"] = state_dict["HRconv.bias"]
-                old_net["model.10.weight"] = state_dict["conv_last.weight"]
-                old_net["model.10.bias"] = state_dict["conv_last.bias"]
-                state_dict = old_net
-
-            # extract model information
-            scale2 = 0
-            max_part = 0
-            plus = False
-            if "f_HR_conv1.0.weight" in state_dict:
-                kind = "SPSR"
-                scalemin = 4
-            else:
-                kind = "ESRGAN"
-                scalemin = 6
-            for part in list(state_dict):
-                parts = part.split(".")
-                n_parts = len(parts)
-                if n_parts == 5 and parts[2] == "sub":
-                    nb = int(parts[3])
-                elif n_parts == 3:
-                    part_num = int(parts[1])
-                    if (
-                        part_num > scalemin
-                        and parts[0] == "model"
-                        and parts[2] == "weight"
-                    ):
-                        scale2 += 1
-                    if part_num > max_part:
-                        max_part = part_num
-                        out_nc = state_dict[part].shape[0]
-                if "conv1x1" in part and not plus:
-                    plus = True
-
-            upscale = 2 ** scale2
-
-            in_nc = state_dict["model.0.weight"].shape[1]
-            if kind == "SPSR":
-                out_nc = state_dict["f_HR_conv1.0.weight"].shape[0]
-            nf = state_dict["model.0.weight"].shape[0]
-
+            # SRVGGNet Real-ESRGAN (v2)
             if (
-                in_nc != self.last_in_nc
-                or out_nc != self.last_out_nc
-                or nf != self.last_nf
-                or nb != self.last_nb
-                or upscale != self.last_scale
-                or kind != self.last_kind
-                or plus != self.last_plus
+                "params" in state_dict.keys()
+                and "body.0.weight" in state_dict["params"].keys()
             ):
-                if kind == "ESRGAN":
-                    self.model = arch.RRDB_Net(
-                        in_nc,
-                        out_nc,
-                        nf,
-                        nb,
-                        gc=32,
-                        upscale=upscale,
-                        norm_type=None,
-                        act_type="leakyrelu",
-                        mode="CNA",
-                        res_scale=1,
-                        upsample_mode="upconv",
-                        plus=plus,
-                    )
-                elif kind == "SPSR":
-                    self.model = arch.SPSRNet(
-                        in_nc,
-                        out_nc,
-                        nf,
-                        nb,
-                        gc=32,
-                        upscale=upscale,
-                        norm_type=None,
-                        act_type="leakyrelu",
-                        mode="CNA",
-                        upsample_mode="upconv",
-                    )
-                self.last_in_nc = in_nc
-                self.last_out_nc = out_nc
-                self.last_nf = nf
-                self.last_nb = nb
-                self.last_scale = upscale
-                self.last_kind = kind
-                self.last_plus = plus
-                # self.last_model = model_name
+                self.model = RealESRGANv2(state_dict)
+                self.last_in_nc = self.model.num_in_ch
+                self.last_out_nc = self.model.num_out_ch
+                self.last_nf = self.model.num_feat
+                self.last_nb = self.model.num_conv
+                self.last_scale = self.model.scale
+                self.last_model = model_name
+            # SPSR (ESRGAN with lots of extra layers)
+            elif "f_HR_conv1.0.weight" in state_dict:
+                self.model = SPSR(state_dict)
+                self.last_in_nc = self.model.in_nc
+                self.last_out_nc = self.model.out_nc
+                self.last_nf = self.model.num_filters
+                self.last_nb = self.model.num_blocks
+                self.last_scale = self.model.scale
+                self.last_model = model_name
+            # Regular ESRGAN, "new-arch" ESRGAN, Real-ESRGAN v1
+            else:
+                self.model = RRDB(state_dict)
+                self.last_in_nc = self.model.in_nc
+                self.last_out_nc = self.model.out_nc
+                self.last_nf = self.model.num_filters
+                self.last_nb = self.model.num_blocks
+                self.last_scale = self.model.scale
+                self.last_model = model_name
 
-            self.model.load_state_dict(state_dict, strict=True)
+            # self.model.load_state_dict(state_dict, strict=True)
             del state_dict
             self.model.eval()
             for k, v in self.model.named_parameters():
                 v.requires_grad = False
-            self.model = self.model.to(self.device, non_blocking=True)
+            self.model = self.model.to(self.device, non_blocking=True).half()
         # self.last_model = model_name
 
     # This code is a somewhat modified version of BlueAmulet's fork of ESRGAN by Xinntao
@@ -792,12 +726,14 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             output1 = self.process(img1)
             output2 = self.process(img2)
             output = cv2.merge(
-                (output1[:, :, 0], output1[:, :, 1], output1[:, :, 2], output2[:, :, 0])
+                (output1[:, :, 0], output1[:, :, 1],
+                 output1[:, :, 2], output2[:, :, 0])
             )
         else:
             if img.ndim == 2:
                 img = np.tile(
-                    np.expand_dims(img, axis=2), (1, 1, min(self.last_in_nc, 3))
+                    np.expand_dims(img, axis=2), (1, 1,
+                                                  min(self.last_in_nc, 3))
                 )
             if img.shape[2] > self.last_in_nc:  # remove extra channels
                 print("Warning: Truncating image channels")
@@ -825,7 +761,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         # Create aliases for models based on unique parts
         for model in self.models:
             name = os.path.splitext(os.path.basename(model))[0]
-            parts = re.findall(r"([0-9]+x?|[A-Z]+(?![a-z])|[A-Z][^A-Z0-9_-]*)", name)
+            parts = re.findall(
+                r"([0-9]+x?|[A-Z]+(?![a-z])|[A-Z][^A-Z0-9_-]*)", name)
             for i in range(len(parts)):
                 for j in range(i + 1, len(parts) + 1):
                     alias = "".join(parts[i:j])
@@ -846,7 +783,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             if aliases[alias]:
                 fuzzylist.append(alias)
 
-        print("Made {} aliases for {} models.".format(len(fuzzylist), len(self.models)))
+        print("Made {} aliases for {} models.".format(
+            len(fuzzylist), len(self.models)))
         return fuzzylist, aliases
 
     def make_montage(self, img1, img2, label):
@@ -860,7 +798,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                 img (array): The montaged image
         """
         img1 = cv2.resize(
-            img1, (img2.shape[1], img2.shape[0]), interpolation=cv2.INTER_NEAREST
+            img1, (img2.shape[1], img2.shape[0]
+                   ), interpolation=cv2.INTER_NEAREST
         )
         img1 = img1.astype(np.float64)
         img2 = img2.astype(np.float64)
@@ -895,14 +834,14 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         img = cv2.vconcat([img, img, img])
         y, x = img_height - 16, img_width - 16
         h, w = img_height + 32, img_width + 32
-        img = img[y : y + h, x : x + w]
+        img = img[y: y + h, x: x + w]
         return img
 
     def crop_seamless(self, img, scale):
         img_height, img_width, img_channels = img.shape
         y, x = 16 * scale, 16 * scale
         h, w = img_height - (32 * scale), img_width - (32 * scale)
-        img = img[y : y + h, x : x + w]
+        img = img[y: y + h, x: x + w]
         return img
 
     async def parse_flags(self, args, message):
@@ -917,7 +856,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
             if arg in {"-downscale", "-d"}:
                 try:
                     downscale = (
-                        float(args[index + 1]) if args[index + 1] != "auto" else "auto"
+                        float(args[index + 1]) if args[index +
+                                                       1] != "auto" else "auto"
                     )
                 except:
                     raise ValueError("Downscale value not specified.")
@@ -953,7 +893,8 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
                     blur_type = args[index + 1]
                     blur_amt = int(args[index + 2])
                 except:
-                    raise ValueError("Blur requires 2 arguments, type and amount.")
+                    raise ValueError(
+                        "Blur requires 2 arguments, type and amount.")
             elif arg in {"-montage", "-m"}:
                 montage = True
             elif arg in {"-seamless", "-s"}:
