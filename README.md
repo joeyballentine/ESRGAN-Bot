@@ -1,6 +1,8 @@
 # ESRGAN-Bot
 
-A Discord bot for upscaling images with ESRGAN, plus a little more. NOTE: This bot only supports old architecture models and will NOT work with new architecture ones.
+NOTE: This hasn't been super actively maintained for a while. If you plan on running this yourself keep in mind that I have a few things hardcoded and once discord enforces slash commands, this bot will no longer work.
+
+A Discord bot for upscaling images with ESRGAN (and variations including ESRGAN+, RealSR, BSRGAN, Real-ESRGAN), plus a little more.
 
 This version of the bot is a complete rewrite in python using Discord.py and the original source code by Xinntao, along with modifications from BlueAmulet's fork.
 
