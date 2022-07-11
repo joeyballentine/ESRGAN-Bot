@@ -1,0 +1,5 @@
+bot_token: 'my_super_long_bot_token'
+bot_prefix: '--'
+img_size_cutoff: 2000
+moderator_role_id: 9999999999
+global_guild_block: false

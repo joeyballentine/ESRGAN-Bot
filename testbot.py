@@ -35,38 +35,39 @@ bot = commands.Bot(
 bot.remove_command("help")
 
 
-@bot.check
-# Note to anyone who sees this, you can safely remove this if you want to run a bot that runs anywhere
-async def globally_block_not_guild(ctx):
-    is_dm = ctx.guild is None
-    if is_dm and config["block_dms"]:
-        print(f"DM, {ctx.author.name}")
-        guild = bot.get_guild(config["guild_id"])
-        guild_member = await guild.fetch_member(ctx.author.id)
-        role = discord.utils.find(
-            lambda r: r.name == config["patreon_role_name"], guild_member.roles
-        )
-        if role:
-            print(f"{ctx.author.name} is permitted to use the bot in DMs.")
-            return True
-        else:
-            await ctx.message.channel.send(
-                "{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at https://www.discord.gg/VR9SzTT to continue use of this bot, or subscribe to my Patreon at https://www.patreon.com/esrganbot. Thank you.".format(
-                    ctx.author.mention
-                )
-            )
-        return False
-    else:
-        is_gu = ctx.guild.id == config["guild_id"]
-        if not is_gu:
-            print(f"{ctx.guild.name}, {ctx.author.name}")
-            await ctx.message.channel.send(
-                "{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.".format(
-                    ctx.author.mention
-                )
-            )
-            return False
-        return True
+if config['global_guild_block']:
+	@bot.check
+	# Note to anyone who sees this, you can safely remove this if you want to run a bot that runs anywhere
+	async def globally_block_not_guild(ctx):
+		is_dm = ctx.guild is None
+		if is_dm and config["block_dms"]:
+			print(f"DM, {ctx.author.name}")
+			guild = bot.get_guild(config["guild_id"])
+			guild_member = await guild.fetch_member(ctx.author.id)
+			role = discord.utils.find(
+				lambda r: r.name == config["patreon_role_name"], guild_member.roles
+			)
+			if role:
+				print(f"{ctx.author.name} is permitted to use the bot in DMs.")
+				return True
+			else:
+				await ctx.message.channel.send(
+					"{}, ESRGAN bot is not permitted for use in DMs. Please join the GameUpscale server at https://www.discord.gg/VR9SzTT to continue use of this bot, or subscribe to my Patreon at https://www.patreon.com/esrganbot. Thank you.".format(
+						ctx.author.mention
+					)
+				)
+			return False
+		else:
+			is_gu = ctx.guild.id == config["guild_id"]
+			if not is_gu:
+				print(f"{ctx.guild.name}, {ctx.author.name}")
+				await ctx.message.channel.send(
+					"{}, ESRGAN bot is not permitted for use in this server. Please join the GameUpscale server at discord.gg/VR9SzTT to continue use of this bot. Thank you.".format(
+						ctx.author.mention
+					)
+				)
+				return False
+			return True
 
 
 class ESRGAN(commands.Cog):

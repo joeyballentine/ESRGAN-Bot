@@ -1,0 +1,5 @@
+discord.py==1.7.3
+fuzzywuzzy==0.18.0
+numpy
+opencv_python_headless
+PyYAML==6.0
