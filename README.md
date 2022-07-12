@@ -27,7 +27,7 @@ OPTIONAL: Enable the virtual environment:
 Install requirements: `pip install -r requirements.txt`
 If not using a virtual environment, use pip3 instead of pip.
 
-Visit the PyTorch website here and generate the correct command for your system.
+Visit the [PyTorch website](https://pytorch.org/) and generate the correct command for your system.
 For Package hit "Pip", for Language hit "Python".
 If you are using a modern Nvidia card with up-to-date drivers select the latest CUDA for Compute Platform.
 If using AMD or no GPU at all, hit CPU instead.
