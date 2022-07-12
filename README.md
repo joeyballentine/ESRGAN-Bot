@@ -16,19 +16,22 @@ You can see a working version of this bot in the GameUpscale discord server here
 
 ### Installation
 
-Setup a python virtual environment: `py -m venv venv`
+Extract this repo to a directory of your choice, open powershell/cmd in that directory.
 
-Enable the virtual environment:
+OPTIONAL: Setup a python virtual environment: `py -m venv venv`
+
+OPTIONAL: Enable the virtual environment:
 - Windows: `venv/scripts/activate`
 - Linux: `source venv/bin/activate`
 
 Install requirements: `pip install -r requirements.txt`
+If not using a virtual environment, use pip3 instead of pip.
 
 Visit the PyTorch website here and generate the correct command for your system.
 For Package hit "Pip", for Language hit "Python".
 If you are using a modern Nvidia card with up-to-date drivers select the latest CUDA for Compute Platform.
 If using AMD or no GPU at all, hit CPU instead.
-Copy the command generated, run it in terminal, installation complete!
+Copy the command generated (change pip3 to pip if using virtual environment), run it in terminal, installation complete!
 
 ### Configuration
 
