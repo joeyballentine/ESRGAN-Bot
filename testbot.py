@@ -716,6 +716,13 @@ Example: `{0}upscale www.imageurl.com/image.png 4xBox.pth -downscale 4 -filter p
         """
         img = img * 1.0 / np.iinfo(img.dtype).max
 
+        # Make image dimensions divisible by two, which is a pytorch requirement
+        # https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/PixelShuffle.cpp#L46-L51
+        # to prevent
+        #   RuntimeError: pixel_unshuffle expects width to be divisible by downscale_factor, but input.size(-1)=613 is not divisible by 2
+        # If either dimension is odd, we truncate the last row or column, which is more user-friendly than adding empty pixels
+        img = img[0:img.shape[0] - img.shape[0] % 2, 0:img.shape[1] - img.shape[1] % 2]
+
         if (
             img.ndim == 3
             and img.shape[2] == 4
